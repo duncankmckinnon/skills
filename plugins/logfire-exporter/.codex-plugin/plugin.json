@@ -7,7 +7,7 @@
     "email": "support@pydantic.dev",
     "url": "https://pydantic.dev"
   },
-  "homepage": "https://github.com/pydantic/skills/tree/main/plugins/logfire-exporter",
+  "homepage": "https://pydantic.dev/docs/logfire/guides/codex-logfire-exporter/",
   "repository": "https://github.com/pydantic/skills",
   "license": "MIT",
   "keywords": [

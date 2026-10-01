@@ -1,6 +1,6 @@
 {
   "name": "logfire",
-  "description": "Instrument applications and infrastructure, investigate telemetry, and manage Logfire workflows across Python, JavaScript, TypeScript, and Rust",
+  "description": "Instrument applications and infrastructure, investigate telemetry, and manage Pydantic Logfire workflows across Python, TypeScript, Rust, or any language.",
   "version": "0.1.5",
   "author": {
     "name": "Pydantic",
