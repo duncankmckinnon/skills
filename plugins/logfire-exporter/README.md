@@ -15,8 +15,8 @@ This plugin is separate from the main Logfire plugin:
 - `logfire-exporter` sends Codex's own activity telemetry to Logfire.
 
 The exporter deliberately does not emit a long-lived session root span. Each completed `Stop` hook exports one
-root-level turn span in a deterministic trace derived from the Codex conversation/thread identity; tool spans are
-children of that turn span.
+root-level enrichment span in a deterministic trace derived from the Codex conversation/thread identity.
+Native Codex telemetry owns tool and model records; the plugin does not emit duplicate tool spans.
 
 ## Capabilities
 
@@ -93,6 +93,14 @@ file does not exist.
 The plugin sends `Authorization: <LOGFIRE_TOKEN>`, matching Logfire's direct OTLP client configuration. If you need a
 scheme-prefixed header, set `CODEX_LOGFIRE_AUTH_SCHEME=Bearer`.
 
+CLI-managed files include `CODEX_LOGFIRE_MANAGED=1`. Their project token and
+destination cannot be replaced by inherited variables or alternate OTLP
+endpoints/headers. Conflicts disable enrichment without blocking Codex; remove
+the conflicting variable or reconfigure the CLI. Standalone exporter files
+retain explicit environment routing.
+Missing explicitly selected files, unreadable files, and duplicate configuration
+keys disable enrichment rather than falling back to inherited settings.
+
 The exporter writes directly to Logfire's OTLP HTTP endpoint. It does not use the Logfire SDK or the OpenTelemetry SDK,
 which lets it control deterministic trace IDs and span IDs derived from Codex conversation metadata.
 
@@ -111,6 +119,10 @@ The selected value is exported as `codex.conversation_id`, while the hook `sessi
 
 By default the plugin uses `CODEX_LOGFIRE_CONTENT_CAPTURE_MODE=no_tool_content`,
 so it exports redacted prompt and final assistant text without tool content.
+The Logfire CLI explicitly configures `full` by default. When the selected
+config file specifies a mode, inherited environment settings can narrow that
+mode but cannot increase content capture. Reconfigure the file to opt into more
+content. An invalid override or file mode falls back to metadata-only.
 
 To suppress captured content, set a narrower mode:
 

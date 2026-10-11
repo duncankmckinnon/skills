@@ -90,7 +90,11 @@ SECRET_PATTERNS = [
 
 
 def main() -> int:
-    load_config_env()
+    try:
+        load_config_env()
+    except (OSError, UnicodeError, ValueError) as exc:
+        debug(f"exporter configuration rejected: {type(exc).__name__}: {exc}")
+        return 0
     raw = sys.stdin.read()
     if not raw.strip():
         debug("empty hook input")
@@ -351,7 +355,7 @@ def build_turn_span(
     mode = content_capture_mode()
     messages = pydantic_ai_messages(turn, mode) if mode != "metadata_only" else []
     attrs: dict[str, Any] = {
-        "logfire.msg": turn_message(turn),
+        "logfire.msg": turn_message(turn, mode),
         "logfire.span_type": "span",
         "logfire.level_num": LOGFIRE_LEVEL_INFO,
         "logfire.tags": ["Codex", *(["LLM"] if messages else [])],
@@ -471,11 +475,11 @@ def build_tool_span(
     return span
 
 
-def turn_message(turn: dict[str, Any]) -> str:
+def turn_message(turn: dict[str, Any], mode: str) -> str:
     model = turn.get("model") or "unknown model"
-    if turn.get("prompt"):
+    if mode != "metadata_only" and turn.get("prompt"):
         return f"Codex turn: {preview_text(str(turn['prompt']))}"
-    if turn.get("last_assistant_message"):
+    if mode != "metadata_only" and turn.get("last_assistant_message"):
         return f"Codex turn: {preview_text(str(turn['last_assistant_message']))}"
     prompt_length = turn.get("prompt_length")
     if isinstance(prompt_length, int) and prompt_length > 0:
@@ -963,7 +967,17 @@ def content_capture_mode() -> str:
     raw = os.getenv("CODEX_LOGFIRE_CONTENT_CAPTURE_MODE", "no_tool_content").strip().lower()
     if raw in {"full", "no_tool_content", "metadata_only"}:
         return raw
-    return "no_tool_content"
+    return "metadata_only"
+
+
+def limited_capture_mode(requested: str | None, configured: str) -> str:
+    """Allow an environment override to narrow, but not widen, file-configured capture."""
+    modes = {"metadata_only": 0, "no_tool_content": 1, "full": 2}
+    configured = configured.strip().lower()
+    requested = configured if requested is None else requested.strip().lower()
+    if configured not in modes or requested not in modes:
+        return "metadata_only"
+    return min((configured, requested), key=modes.__getitem__)
 
 
 def redact_json_value(value: Any) -> Any:
@@ -1021,11 +1035,11 @@ def count_spans(request: dict[str, Any]) -> int:
 def load_config_env() -> None:
     path = config_env_path()
     if not path.is_file():
+        if os.getenv("CODEX_LOGFIRE_CONFIG_FILE"):
+            raise ValueError("CODEX_LOGFIRE_CONFIG_FILE must identify a readable exporter config file")
         return
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return
+    lines = path.read_text(encoding="utf-8").splitlines()
+    configured_values = {}
     for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
@@ -1034,9 +1048,34 @@ def load_config_env() -> None:
         key = key.strip()
         if not (key.startswith("LOGFIRE_") or key.startswith("CODEX_LOGFIRE_") or key.startswith("OTEL_EXPORTER_OTLP")):
             continue
-        if key in os.environ:
-            continue
-        os.environ[key] = unquote_env_value(value.strip())
+        if key in configured_values:
+            raise ValueError(f"duplicate exporter config field: {key}")
+        configured_values[key] = unquote_env_value(value.strip())
+    if configured_values.get("CODEX_LOGFIRE_MANAGED") == "1":
+        validate_managed_config(configured_values)
+    for key, configured in configured_values.items():
+        if key == "CODEX_LOGFIRE_CONTENT_CAPTURE_MODE":
+            os.environ[key] = limited_capture_mode(os.environ.get(key), configured)
+        elif key not in os.environ:
+            os.environ[key] = configured
+
+
+def validate_managed_config(configured: dict[str, str]) -> None:
+    """Do not let inherited settings reroute a CLI-managed SDK credential."""
+    for key in ("LOGFIRE_BASE_URL", "LOGFIRE_TOKEN", "CODEX_LOGFIRE_CONTENT_CAPTURE_MODE"):
+        if not configured.get(key):
+            raise ValueError(f"CLI-managed exporter config requires {key}")
+    for key in ("LOGFIRE_BASE_URL", "LOGFIRE_TOKEN"):
+        if key in os.environ and os.environ[key] != configured[key]:
+            raise ValueError(f"inherited {key} conflicts with CLI-managed exporter config")
+    for key in (
+        "LOGFIRE_URL", "CODEX_LOGFIRE_TRACES_ENDPOINT", "CODEX_LOGFIRE_TOKEN",
+        "CODEX_LOGFIRE_AUTH_SCHEME", "CODEX_LOGFIRE_OTLP_HEADERS",
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_HEADERS",
+    ):
+        if os.environ.get(key) or configured.get(key):
+            raise ValueError(f"{key} is not supported for CLI-managed exporter config")
 
 
 def config_env_path() -> Path:

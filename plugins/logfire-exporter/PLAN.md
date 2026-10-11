@@ -55,10 +55,12 @@ parent span unless Codex supplies an active W3C trace context to hooks.
 
 - enable the native trace exporter
 - keep the native log exporter disabled
-- do not install or run enrichment hooks
+- omit captured content from enrichment records
 
-This is the default. It avoids prompt, assistant, tool, account-email, and host
-content while retaining timing, usage, and operational structure.
+This is an explicit opt-out in the CLI. It avoids prompt, assistant, tool,
+account-email, and host content while retaining timing, usage, and operational
+structure. The standalone plugin defaults to `no_tool_content`; the CLI
+explicitly configures `full` by default.
 
 ### Conversation
 
@@ -72,13 +74,14 @@ content while retaining timing, usage, and operational structure.
 
 ### Full debugging
 
-- enable native traces and logs explicitly
+- enable native traces and logs
 - set `otel.log_user_prompt = true`
 - use `Stop` only for the final assistant response
 - retain Codex's bounded tool-result preview instead of exporting full results
 
-Full debugging must be an explicit choice. The CLI must explain that native
+Full debugging is the CLI default. The CLI must explain that native
 logs include account email, host name, tool arguments, and tool-result previews.
+Environment overrides may narrow file-configured capture, not widen it.
 
 Metrics remain disabled initially. Their high-cardinality operational series
 are useful for fleet monitoring but are not required for the Logfire agent-run
@@ -86,13 +89,16 @@ experience and can materially increase ingest volume.
 
 ## Configuration Safety
 
-`logfire codex configure` should own the generated Codex OTLP configuration.
+`logfire --beta agent codex configure` owns the generated Codex OTLP configuration.
 It must:
 
 - preserve unrelated `config.toml` content and comments
 - refuse to replace an existing non-Logfire OTLP destination without an
   explicit replacement choice
 - write atomically with user-only permissions
+- detect concurrent native/enrichment edits and refuse ambiguous file paths
+- bind CLI-managed enrichment to its file credential and destination; refuse
+  conflicting inherited exporters and missing, unreadable, or duplicate settings
 - never print or pass the project token in subprocess arguments
 - report native telemetry and optional enrichment status separately
 - remove only settings it owns
