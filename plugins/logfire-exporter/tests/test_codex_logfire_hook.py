@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import io
 import json
 import os
 import tempfile
 import threading
 import unittest
+from unittest.mock import patch
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 
@@ -77,12 +79,206 @@ class HookTests(unittest.TestCase):
         os.environ["CODEX_LOGFIRE_AUTH_SCHEME"] = "bearer"
         self.assertEqual(hook.authorization_header("Bearer write-token"), "Bearer write-token")
 
-    def test_content_capture_defaults_to_full(self) -> None:
-        self.assertEqual(hook.content_capture_mode(), "full")
+    def test_content_capture_defaults_to_no_tool_content(self) -> None:
+        self.assertEqual(hook.content_capture_mode(), "no_tool_content")
         os.environ["CODEX_LOGFIRE_CONTENT_CAPTURE_MODE"] = "metadata_only"
         self.assertEqual(hook.content_capture_mode(), "metadata_only")
         os.environ["CODEX_LOGFIRE_CONTENT_CAPTURE_MODE"] = "invalid"
-        self.assertEqual(hook.content_capture_mode(), "full")
+        self.assertEqual(hook.content_capture_mode(), "metadata_only")
+
+    def test_managed_config_refuses_inherited_destination_and_credential_overrides(self) -> None:
+        config = Path(os.environ["CODEX_LOGFIRE_CONFIG_FILE"])
+        config.write_text(
+            "CODEX_LOGFIRE_MANAGED=1\nLOGFIRE_BASE_URL=https://project.example\n"
+            "LOGFIRE_TOKEN=project-token\nCODEX_LOGFIRE_CONTENT_CAPTURE_MODE=metadata_only\n",
+            encoding="utf-8",
+        )
+        for key in (
+            "LOGFIRE_BASE_URL", "LOGFIRE_TOKEN", "LOGFIRE_URL", "CODEX_LOGFIRE_TRACES_ENDPOINT",
+            "CODEX_LOGFIRE_TOKEN", "CODEX_LOGFIRE_AUTH_SCHEME", "CODEX_LOGFIRE_OTLP_HEADERS",
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_EXPORTER_OTLP_HEADERS",
+        ):
+            with self.subTest(key=key), patch.dict(os.environ, {key: "PRIVATE_OVERRIDE_CANARY"}):
+                with self.assertRaisesRegex(ValueError, key) as error:
+                    hook.load_config_env()
+                self.assertNotIn("PRIVATE_OVERRIDE_CANARY", str(error.exception))
+                with patch.object(hook, "dispatch") as dispatch:
+                    self.assertEqual(hook.main(), 0)
+                    dispatch.assert_not_called()
+
+    def test_managed_config_requires_complete_context_and_rejects_file_overrides(self) -> None:
+        required = {
+            "LOGFIRE_BASE_URL": "https://project.example", "LOGFIRE_TOKEN": "project-token",
+            "CODEX_LOGFIRE_CONTENT_CAPTURE_MODE": "metadata_only",
+        }
+        for missing in required:
+            with self.subTest(missing=missing), self.assertRaisesRegex(ValueError, missing):
+                hook.validate_managed_config({key: value for key, value in required.items() if key != missing})
+        with self.assertRaisesRegex(ValueError, "OTEL_EXPORTER_OTLP_HEADERS"):
+            hook.validate_managed_config({**required, "OTEL_EXPORTER_OTLP_HEADERS": "Authorization=other"})
+
+    def test_managed_config_exports_to_its_project_with_identical_inherited_settings(self) -> None:
+        server = HTTPServer(("127.0.0.1", 0), CaptureHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(server.shutdown)
+        destination = f"http://127.0.0.1:{server.server_port}"
+        config = Path(os.environ["CODEX_LOGFIRE_CONFIG_FILE"])
+        config.write_text(
+            f"CODEX_LOGFIRE_MANAGED=1\nLOGFIRE_BASE_URL={destination}\nLOGFIRE_TOKEN=project-token\n"
+            "CODEX_LOGFIRE_CONTENT_CAPTURE_MODE=metadata_only\n", encoding="utf-8",
+        )
+        os.environ.update({"LOGFIRE_BASE_URL": destination, "LOGFIRE_TOKEN": "project-token",
+                           "CODEX_LOGFIRE_CONTENT_CAPTURE_MODE": "full"})
+        payload = {"hook_event_name": "Stop", "session_id": "session", "turn_id": "turn",
+                   "last_assistant_message": "RESPONSE_CANARY"}
+        with patch.object(hook.sys, "stdin", io.StringIO(json.dumps(payload))):
+            self.assertEqual(hook.main(), 0)
+        self.assertEqual(CaptureHandler.headers_seen["Authorization"], "project-token")
+        self.assertIsNotNone(CaptureHandler.body)
+        self.assertNotIn(b"RESPONSE_CANARY", CaptureHandler.body)
+
+    def test_standalone_file_preserves_explicit_environment_routing(self) -> None:
+        config = Path(os.environ["CODEX_LOGFIRE_CONFIG_FILE"])
+        config.write_text("LOGFIRE_TOKEN=file-token\nLOGFIRE_BASE_URL=https://file.example\n", encoding="utf-8")
+        os.environ.update({"LOGFIRE_TOKEN": "environment-token", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "https://collector.example"})
+        hook.load_config_env()
+        self.assertEqual(hook.logfire_token(), "environment-token")
+        self.assertEqual(hook.otlp_traces_endpoint(), "https://collector.example/v1/traces")
+
+    def test_missing_or_unreadable_selected_config_disables_enrichment_without_blocking_codex(self) -> None:
+        os.environ.update({"LOGFIRE_TOKEN": "inherited-token", "LOGFIRE_BASE_URL": "https://inherited.example",
+                           "CODEX_LOGFIRE_CONTENT_CAPTURE_MODE": "full"})
+        with patch.object(hook, "dispatch") as dispatch:
+            self.assertEqual(hook.main(), 0)
+            dispatch.assert_not_called()
+            with patch.object(Path, "is_file", return_value=True), patch.object(Path, "read_text", side_effect=PermissionError):
+                self.assertEqual(hook.main(), 0)
+                dispatch.assert_not_called()
+
+    def test_duplicate_config_keys_cannot_disagree_with_cli_status_or_consent(self) -> None:
+        config = Path(os.environ["CODEX_LOGFIRE_CONFIG_FILE"])
+        values = {"CODEX_LOGFIRE_MANAGED": "1", "LOGFIRE_BASE_URL": "https://project.example",
+                  "LOGFIRE_TOKEN": "project-token", "CODEX_LOGFIRE_CONTENT_CAPTURE_MODE": "metadata_only"}
+        for duplicate in values:
+            with self.subTest(duplicate=duplicate):
+                config.write_text("".join(f"{key}={value}\n" for key, value in values.items()) + f"{duplicate}=PRIVATE_CANARY\n", encoding="utf-8")
+                with self.assertRaisesRegex(ValueError, "duplicate exporter config field") as error:
+                    hook.load_config_env()
+                self.assertNotIn("PRIVATE_CANARY", str(error.exception))
+                with patch.object(hook, "dispatch") as dispatch:
+                    self.assertEqual(hook.main(), 0)
+                    dispatch.assert_not_called()
+
+    def test_configured_capture_is_a_ceiling_for_environment_overrides(self) -> None:
+        modes = ["metadata_only", "no_tool_content", "full"]
+        config = Path(os.environ["CODEX_LOGFIRE_CONFIG_FILE"])
+        for configured_index, configured in enumerate(modes):
+            config.write_text(f"CODEX_LOGFIRE_CONTENT_CAPTURE_MODE='{configured}'\n", encoding="utf-8")
+            for requested_index, requested in enumerate(modes):
+                with self.subTest(configured=configured, requested=requested):
+                    os.environ["CODEX_LOGFIRE_CONTENT_CAPTURE_MODE"] = requested
+                    hook.load_config_env()
+                    expected = modes[min(configured_index, requested_index)]
+                    self.assertEqual(hook.content_capture_mode(), expected)
+                    hook.load_config_env()
+                    self.assertEqual(hook.content_capture_mode(), expected)
+            os.environ.pop("CODEX_LOGFIRE_CONTENT_CAPTURE_MODE", None)
+            hook.load_config_env()
+            self.assertEqual(hook.content_capture_mode(), configured)
+        self.assertEqual(hook.limited_capture_mode("FULL", " Metadata_Only "), "metadata_only")
+        for configured, requested in [("invalid", "full"), ("full", "invalid")]:
+            self.assertEqual(hook.limited_capture_mode(requested, configured), "metadata_only")
+
+    def test_metadata_only_file_prevents_content_in_the_exported_turn(self) -> None:
+        config = Path(os.environ["CODEX_LOGFIRE_CONFIG_FILE"])
+        config.write_text("CODEX_LOGFIRE_CONTENT_CAPTURE_MODE=metadata_only\n", encoding="utf-8")
+        os.environ["CODEX_LOGFIRE_CONTENT_CAPTURE_MODE"] = "full"
+        hook.load_config_env()
+        request = hook.build_otlp_request({
+            "session_id": "session", "turn_id": "turn", "prompt": "PROMPT_CANARY",
+            "last_assistant_message": "RESPONSE_CANARY",
+        }, None)
+        serialized = json.dumps(request)
+        self.assertNotIn("PROMPT_CANARY", serialized)
+        self.assertNotIn("RESPONSE_CANARY", serialized)
+
+    def test_capture_downgrade_does_not_leak_an_in_progress_turn_preview(self) -> None:
+        server = HTTPServer(("127.0.0.1", 0), CaptureHandler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(thread.join, 2)
+        self.addCleanup(server.shutdown)
+        os.environ["LOGFIRE_BASE_URL"] = f"http://127.0.0.1:{server.server_port}"
+        os.environ["LOGFIRE_TOKEN"] = "test-token"
+        os.environ["CODEX_LOGFIRE_CONTENT_CAPTURE_MODE"] = "full"
+        hook.dispatch({
+            "hook_event_name": "UserPromptSubmit", "session_id": "session", "turn_id": "turn",
+            "prompt": "PROMPT_CANARY",
+        })
+        config = Path(os.environ["CODEX_LOGFIRE_CONFIG_FILE"])
+        config.write_text("CODEX_LOGFIRE_CONTENT_CAPTURE_MODE=metadata_only\n", encoding="utf-8")
+        hook.load_config_env()
+        hook.dispatch({
+            "hook_event_name": "Stop", "session_id": "session", "turn_id": "turn",
+            "last_assistant_message": "RESPONSE_CANARY",
+        })
+        self.assertIsNotNone(CaptureHandler.body)
+        self.assertNotIn(b"PROMPT_CANARY", CaptureHandler.body)
+        self.assertNotIn(b"RESPONSE_CANARY", CaptureHandler.body)
+
+    def test_capture_text_redacts_then_truncates_at_utf8_boundary(self) -> None:
+        value = "token=super-secret-value " + "🔥" * hook.MAX_CAPTURE_TEXT_BYTES
+
+        captured = hook.capture_text(value)
+
+        self.assertNotIn("super-secret-value", captured)
+        self.assertIn("token=[REDACTED]", captured)
+        self.assertTrue(captured.endswith(hook.TRUNCATION_MARKER))
+        self.assertLessEqual(len(captured.encode("utf-8")), hook.MAX_CAPTURE_TEXT_BYTES)
+        self.assertEqual(captured.encode("utf-8").decode("utf-8"), captured)
+
+    def test_oversized_request_degrades_to_metadata_only(self) -> None:
+        request = hook.build_otlp_request(
+            {
+                "session_id": "sess-1",
+                "turn_id": "turn-1",
+                "prompt": "hello",
+                "last_assistant_message": "done",
+            },
+            None,
+        )
+        span = request["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+        span["attributes"].append(
+            {
+                "key": "codex.prompt",
+                "value": {"stringValue": "x" * hook.MAX_OTLP_REQUEST_BYTES},
+            }
+        )
+
+        body = hook.bounded_otlp_body(request)
+
+        self.assertLessEqual(len(body), hook.MAX_OTLP_REQUEST_BYTES)
+        attrs = flatten_attrs(json.loads(body)["resourceSpans"][0]["scopeSpans"][0]["spans"][0]["attributes"])
+        self.assertEqual(attrs["codex.session_id"], "sess-1")
+        self.assertNotIn("logfire.msg", attrs)
+        self.assertTrue(hook.CONTENT_ATTRIBUTE_KEYS.isdisjoint(attrs))
+
+    def test_oversized_metadata_request_is_rejected(self) -> None:
+        request = hook.build_otlp_request({"session_id": "s", "turn_id": "t"}, None)
+        span = request["resourceSpans"][0]["scopeSpans"][0]["spans"][0]
+        span["attributes"].append(
+            {
+                "key": "unexpected.large.metadata",
+                "value": {"stringValue": "x" * hook.MAX_OTLP_REQUEST_BYTES},
+            }
+        )
+
+        with self.assertRaisesRegex(ValueError, "after removing captured content"):
+            hook.bounded_otlp_body(request)
 
     def test_logfire_base_url_is_accepted_for_endpoint(self) -> None:
         os.environ["LOGFIRE_BASE_URL"] = "https://logfire-eu.pydantic.dev/"
@@ -114,7 +310,7 @@ class HookTests(unittest.TestCase):
         new_path.write_text("LOGFIRE_TOKEN=new-token\n", encoding="utf-8")
         self.assertEqual(hook.config_env_path(), new_path)
 
-    def test_stop_exports_turn_and_tool_spans(self) -> None:
+    def test_stop_exports_only_logfire_turn_enrichment(self) -> None:
         server = HTTPServer(("127.0.0.1", 0), CaptureHandler)
         thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
@@ -125,70 +321,6 @@ class HookTests(unittest.TestCase):
         os.environ["CODEX_LOGFIRE_PROJECT"] = "acme/codex"
         os.environ["CODEX_LOGFIRE_CONTENT_CAPTURE_MODE"] = "no_tool_content"
 
-        transcript = Path(self.tmp.name) / "rollout.jsonl"
-        transcript.write_text(
-            "\n".join(
-                [
-                    json.dumps(
-                        {
-                            "type": "event_msg",
-                            "payload": {
-                                "type": "token_count",
-                                "info": {
-                                    "total_token_usage": {
-                                        "input_tokens": 10,
-                                        "cached_input_tokens": 2,
-                                        "output_tokens": 3,
-                                        "reasoning_output_tokens": 1,
-                                        "total_tokens": 13,
-                                    }
-                                },
-                            },
-                        }
-                    ),
-                    json.dumps({"type": "turn_context", "payload": {"turn_id": "turn-1"}}),
-                    json.dumps(
-                        {
-                            "type": "event_msg",
-                            "payload": {
-                                "type": "token_count",
-                                "info": {
-                                    "total_token_usage": {
-                                        "input_tokens": 30,
-                                        "cached_input_tokens": 4,
-                                        "output_tokens": 8,
-                                        "reasoning_output_tokens": 2,
-                                        "total_tokens": 38,
-                                    },
-                                    "last_token_usage": {
-                                        "input_tokens": 20,
-                                        "cached_input_tokens": 2,
-                                        "output_tokens": 5,
-                                        "reasoning_output_tokens": 1,
-                                        "total_tokens": 25,
-                                    },
-                                    "model_context_window": 128000,
-                                },
-                            },
-                        }
-                    ),
-                ]
-            )
-            + "\n",
-            encoding="utf-8",
-        )
-
-        hook.dispatch(
-            {
-                "hook_event_name": "SessionStart",
-                "session_id": "sess-1",
-                "cwd": "/tmp/project",
-                "model": "gpt-5.5",
-                "source": "startup",
-                "transcript_path": str(transcript),
-                "timestamp": "2026-05-14T10:00:00Z",
-            }
-        )
         hook.dispatch(
             {
                 "hook_event_name": "UserPromptSubmit",
@@ -200,21 +332,12 @@ class HookTests(unittest.TestCase):
         )
         hook.dispatch(
             {
-                "hook_event_name": "PostToolUse",
-                "session_id": "sess-1",
-                "turn_id": "turn-1",
-                "tool_name": "Bash",
-                "tool_use_id": "tool-1",
-                "tool_response": {"exit_code": 0},
-                "duration_ms": 250.5,
-                "timestamp": "2026-05-14T10:00:03Z",
-            }
-        )
-        hook.dispatch(
-            {
                 "hook_event_name": "Stop",
                 "session_id": "sess-1",
                 "turn_id": "turn-1",
+                "cwd": "/tmp/project",
+                "model": "gpt-5.5",
+                "source": "exec",
                 "last_assistant_message": "done",
                 "timestamp": "2026-05-14T10:00:04Z",
             }
@@ -223,15 +346,11 @@ class HookTests(unittest.TestCase):
         self.assertIsNotNone(CaptureHandler.body)
         request = json.loads(CaptureHandler.body or b"{}")
         spans = request["resourceSpans"][0]["scopeSpans"][0]["spans"]
-        self.assertEqual(len(spans), 2)
+        self.assertEqual(len(spans), 1)
         self.assertEqual(spans[0]["name"], "codex turn")
         self.assertEqual(spans[0]["kind"], hook.SPAN_KIND_INTERNAL)
         self.assertEqual(spans[0]["status"]["code"], hook.STATUS_CODE_OK)
         self.assertNotIn("parentSpanId", spans[0])
-        self.assertEqual(spans[1]["parentSpanId"], spans[0]["spanId"])
-        self.assertEqual(spans[1]["kind"], hook.SPAN_KIND_INTERNAL)
-        self.assertEqual(spans[1]["status"]["code"], hook.STATUS_CODE_OK)
-        self.assertEqual(spans[0]["traceId"], spans[1]["traceId"])
         self.assertEqual(CaptureHandler.headers_seen["Authorization"], "test-token")
 
         attrs = flatten_attrs(spans[0]["attributes"])
@@ -248,8 +367,9 @@ class HookTests(unittest.TestCase):
         # The provider, not "codex", so cost calculators can price the turn.
         self.assertEqual(attrs["gen_ai.system"], "openai")
         self.assertEqual(attrs["gen_ai.response.model"], "gpt-5.5")
-        self.assertEqual(attrs["gen_ai.usage.input_tokens"], "20")
-        self.assertEqual(attrs["gen_ai.usage.output_tokens"], "5")
+        self.assertNotIn("gen_ai.usage.input_tokens", attrs)
+        self.assertNotIn("gen_ai.usage.output_tokens", attrs)
+        self.assertNotIn("gen_ai.tool.call.count", attrs)
         self.assertEqual(attrs["final_result"], "done")
         messages = json.loads(str(attrs["pydantic_ai.all_messages"]))
         self.assertEqual(
@@ -259,12 +379,6 @@ class HookTests(unittest.TestCase):
                 {"role": "assistant", "parts": [{"type": "text", "content": "done"}]},
             ],
         )
-
-        tool_attrs = flatten_attrs(spans[1]["attributes"])
-        self.assertEqual(tool_attrs["logfire.msg"], "Codex tool Bash completed")
-        self.assertEqual(tool_attrs["logfire.tags"], ["Codex"])
-        self.assertEqual(tool_attrs["codex.tool.success"], True)
-        self.assertEqual(tool_attrs["codex.tool.duration_ms"], 250.5)
 
     def test_thread_id_env_groups_multiple_hook_sessions_in_one_trace(self) -> None:
         server = HTTPServer(("127.0.0.1", 0), CaptureHandler)

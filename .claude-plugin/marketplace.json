@@ -1,6 +1,7 @@
 {
   "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "pydantic-skills",
+  "description": "Official Pydantic plugins for Logfire, Pydantic AI, and Pydantic.",
   "owner": {
     "name": "Pydantic",
     "email": "support@pydantic.dev"
@@ -8,15 +9,15 @@
   "plugins": [
     {
       "name": "logfire",
-      "description": "Add Logfire observability to Python applications with auto-instrumentation for FastAPI, httpx, asyncpg, SQLAlchemy, and more",
-      "version": "0.1.4",
+      "description": "Instrument applications and infrastructure, investigate telemetry, and manage Pydantic Logfire workflows across Python, TypeScript, Rust, or any language.",
+      "version": "0.1.5",
       "author": {
         "name": "Pydantic",
         "email": "support@pydantic.dev"
       },
       "source": "./plugins/logfire",
       "category": "monitoring",
-      "homepage": "https://github.com/pydantic/skills/tree/main/plugins/logfire"
+      "homepage": "https://pydantic.dev/docs/logfire/guides/skills/"
     },
     {
       "name": "ai",
@@ -28,7 +29,7 @@
       },
       "source": "./plugins/ai",
       "category": "development",
-      "homepage": "https://github.com/pydantic/skills/tree/main/plugins/ai"
+      "homepage": "https://pydantic.dev/docs/ai/overview/coding-agent-skills/"
     },
     {
       "name": "pydantic-ai-harness",
@@ -40,7 +41,7 @@
       },
       "source": "./plugins/pydantic-ai-harness",
       "category": "development",
-      "homepage": "https://github.com/pydantic/skills/tree/main/plugins/pydantic-ai-harness"
+      "homepage": "https://pydantic.dev/docs/ai/harness/"
     },
     {
       "name": "pydantic",
@@ -52,7 +53,7 @@
       },
       "source": "./plugins/pydantic",
       "category": "development",
-      "homepage": "https://github.com/pydantic/skills/tree/main/plugins/pydantic"
+      "homepage": "https://pydantic.dev/docs/validation/latest/get-started/"
     }
   ]
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Codex hook entrypoint that exports completed turns to Logfire via OTLP JSON.
+"""Codex hook entrypoint that enriches native telemetry with completed turns.
 
 This intentionally avoids the Logfire SDK and the OpenTelemetry SDK so the
 plugin can control trace/span IDs from Codex conversation identities.
@@ -46,6 +46,19 @@ STATE_DIR_NAME = "logfire-exporter"
 LEGACY_STATE_DIR_NAMES = ("codex-logfire-exporter", "codex-logfire-plugin")
 DEFAULT_LOGFIRE_URL = "https://logfire-api.pydantic.dev"
 MAX_TRANSCRIPT_BYTES = 20 * 1024 * 1024
+MAX_CAPTURE_TEXT_BYTES = 60 * 1024
+MAX_OTLP_REQUEST_BYTES = 512 * 1024
+TRUNCATION_MARKER = "\n...[TRUNCATED]"
+CONTENT_ATTRIBUTE_KEYS = frozenset(
+    {
+        "codex.prompt",
+        "codex.last_assistant_message",
+        "pydantic_ai.all_messages",
+        "logfire.json_schema",
+        "logfire.msg",
+        "final_result",
+    }
+)
 STALE_AFTER_SECONDS = 24 * 60 * 60
 LOCK_TIMEOUT_SECONDS = 2.0
 SPAN_KIND_INTERNAL = 1
@@ -77,7 +90,11 @@ SECRET_PATTERNS = [
 
 
 def main() -> int:
-    load_config_env()
+    try:
+        load_config_env()
+    except (OSError, UnicodeError, ValueError) as exc:
+        debug(f"exporter configuration rejected: {type(exc).__name__}: {exc}")
+        return 0
     raw = sys.stdin.read()
     if not raw.strip():
         debug("empty hook input")
@@ -145,7 +162,7 @@ def handle_user_prompt_submit(payload: dict[str, Any]) -> None:
             prompt = str(payload["prompt"])
             turn["prompt_length"] = len(prompt)
             if mode != "metadata_only":
-                turn["prompt"] = redact_text(prompt)
+                turn["prompt"] = capture_text(prompt)
 
     update_json(turn_path(payload["session_id"], payload["turn_id"]), mutate)
 
@@ -203,7 +220,7 @@ def handle_stop(payload: dict[str, Any]) -> None:
             last_assistant_message = str(payload["last_assistant_message"])
             turn["last_assistant_message_length"] = len(last_assistant_message)
             if mode != "metadata_only":
-                turn["last_assistant_message"] = redact_text(last_assistant_message)
+                turn["last_assistant_message"] = capture_text(last_assistant_message)
 
     path = turn_path(session_id, turn_id)
     update_json(path, mutate)
@@ -217,8 +234,7 @@ def handle_stop(payload: dict[str, Any]) -> None:
         delete_file(path)
         return
 
-    usage = read_token_usage_for_turn(turn.get("transcript_path"), turn_id)
-    request = build_otlp_request(turn, usage)
+    request = build_otlp_request(turn, None)
     export_otlp(request)
     delete_file(path)
     debug(f"exported session={session_id} turn={turn_id} spans={count_spans(request)}")
@@ -303,8 +319,6 @@ def build_otlp_request(turn: dict[str, Any], usage: dict[str, Any] | None) -> di
         completed_at_ns = started_at_ns
 
     spans = [build_turn_span(turn, usage, trace_id, turn_span_id, started_at_ns, completed_at_ns)]
-    for index, tool in enumerate(turn.get("tools") or []):
-        spans.append(build_tool_span(turn, tool, index, trace_id, turn_span_id, completed_at_ns))
 
     return {
         "resourceSpans": [
@@ -341,7 +355,7 @@ def build_turn_span(
     mode = content_capture_mode()
     messages = pydantic_ai_messages(turn, mode) if mode != "metadata_only" else []
     attrs: dict[str, Any] = {
-        "logfire.msg": turn_message(turn),
+        "logfire.msg": turn_message(turn, mode),
         "logfire.span_type": "span",
         "logfire.level_num": LOGFIRE_LEVEL_INFO,
         "logfire.tags": ["Codex", *(["LLM"] if messages else [])],
@@ -366,7 +380,6 @@ def build_turn_span(
         "gen_ai.request.model": turn.get("model"),
         "gen_ai.response.model": turn.get("model"),
         "gen_ai.response.finish_reasons": ["stop"],
-        "gen_ai.tool.call.count": len(turn.get("tools") or []),
         "agent_name": "codex",
         "model_name": turn.get("model"),
     }
@@ -462,11 +475,11 @@ def build_tool_span(
     return span
 
 
-def turn_message(turn: dict[str, Any]) -> str:
+def turn_message(turn: dict[str, Any], mode: str) -> str:
     model = turn.get("model") or "unknown model"
-    if turn.get("prompt"):
+    if mode != "metadata_only" and turn.get("prompt"):
         return f"Codex turn: {preview_text(str(turn['prompt']))}"
-    if turn.get("last_assistant_message"):
+    if mode != "metadata_only" and turn.get("last_assistant_message"):
         return f"Codex turn: {preview_text(str(turn['last_assistant_message']))}"
     prompt_length = turn.get("prompt_length")
     if isinstance(prompt_length, int) and prompt_length > 0:
@@ -557,7 +570,7 @@ def usage_attributes(usage: dict[str, Any]) -> dict[str, Any]:
 
 
 def export_otlp(request: dict[str, Any]) -> None:
-    body = json.dumps(request, separators=(",", ":")).encode()
+    body = bounded_otlp_body(request)
     headers = {
         "Content-Type": "application/json",
         "User-Agent": f"{SERVICE_NAME}/{PLUGIN_VERSION}",
@@ -576,6 +589,27 @@ def export_otlp(request: dict[str, Any]) -> None:
     except urllib.error.HTTPError as exc:
         detail = exc.read(512).decode(errors="replace")
         raise RuntimeError(f"OTLP export returned HTTP {exc.code}: {detail}") from exc
+
+
+def bounded_otlp_body(request: dict[str, Any]) -> bytes:
+    body = json.dumps(request, separators=(",", ":")).encode()
+    if len(body) <= MAX_OTLP_REQUEST_BYTES:
+        return body
+
+    removed = 0
+    for resource_span in request.get("resourceSpans") or []:
+        for scope_span in resource_span.get("scopeSpans") or []:
+            for span in scope_span.get("spans") or []:
+                attributes = span.get("attributes") or []
+                kept = [attribute for attribute in attributes if attribute.get("key") not in CONTENT_ATTRIBUTE_KEYS]
+                removed += len(attributes) - len(kept)
+                span["attributes"] = kept
+
+    body = json.dumps(request, separators=(",", ":")).encode()
+    if len(body) > MAX_OTLP_REQUEST_BYTES:
+        raise ValueError(f"OTLP request exceeds {MAX_OTLP_REQUEST_BYTES} bytes after removing captured content")
+    debug(f"OTLP request exceeded {MAX_OTLP_REQUEST_BYTES} bytes; removed {removed} captured-content attributes")
+    return body
 
 
 def otlp_traces_endpoint() -> str:
@@ -930,10 +964,20 @@ def cleanup_stale(current_session_id: str | None = None, current_turn_id: str | 
 
 
 def content_capture_mode() -> str:
-    raw = os.getenv("CODEX_LOGFIRE_CONTENT_CAPTURE_MODE", "full").strip().lower()
+    raw = os.getenv("CODEX_LOGFIRE_CONTENT_CAPTURE_MODE", "no_tool_content").strip().lower()
     if raw in {"full", "no_tool_content", "metadata_only"}:
         return raw
-    return "full"
+    return "metadata_only"
+
+
+def limited_capture_mode(requested: str | None, configured: str) -> str:
+    """Allow an environment override to narrow, but not widen, file-configured capture."""
+    modes = {"metadata_only": 0, "no_tool_content": 1, "full": 2}
+    configured = configured.strip().lower()
+    requested = configured if requested is None else requested.strip().lower()
+    if configured not in modes or requested not in modes:
+        return "metadata_only"
+    return min((configured, requested), key=modes.__getitem__)
 
 
 def redact_json_value(value: Any) -> Any:
@@ -959,6 +1003,21 @@ def redact_text(value: str) -> str:
     return redacted
 
 
+def capture_text(value: str) -> str:
+    return truncate_utf8(redact_text(value), MAX_CAPTURE_TEXT_BYTES)
+
+
+def truncate_utf8(value: str, max_bytes: int) -> str:
+    encoded = value.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return value
+    marker = TRUNCATION_MARKER.encode()
+    if len(marker) >= max_bytes:
+        return marker[:max_bytes].decode("utf-8", errors="ignore")
+    prefix = encoded[: max_bytes - len(marker)].decode("utf-8", errors="ignore")
+    return prefix + TRUNCATION_MARKER
+
+
 def json_dumps_or_none(value: Any) -> str | None:
     if value is None:
         return None
@@ -976,11 +1035,11 @@ def count_spans(request: dict[str, Any]) -> int:
 def load_config_env() -> None:
     path = config_env_path()
     if not path.is_file():
+        if os.getenv("CODEX_LOGFIRE_CONFIG_FILE"):
+            raise ValueError("CODEX_LOGFIRE_CONFIG_FILE must identify a readable exporter config file")
         return
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
-        return
+    lines = path.read_text(encoding="utf-8").splitlines()
+    configured_values = {}
     for line in lines:
         stripped = line.strip()
         if not stripped or stripped.startswith("#") or "=" not in stripped:
@@ -989,9 +1048,34 @@ def load_config_env() -> None:
         key = key.strip()
         if not (key.startswith("LOGFIRE_") or key.startswith("CODEX_LOGFIRE_") or key.startswith("OTEL_EXPORTER_OTLP")):
             continue
-        if key in os.environ:
-            continue
-        os.environ[key] = unquote_env_value(value.strip())
+        if key in configured_values:
+            raise ValueError(f"duplicate exporter config field: {key}")
+        configured_values[key] = unquote_env_value(value.strip())
+    if configured_values.get("CODEX_LOGFIRE_MANAGED") == "1":
+        validate_managed_config(configured_values)
+    for key, configured in configured_values.items():
+        if key == "CODEX_LOGFIRE_CONTENT_CAPTURE_MODE":
+            os.environ[key] = limited_capture_mode(os.environ.get(key), configured)
+        elif key not in os.environ:
+            os.environ[key] = configured
+
+
+def validate_managed_config(configured: dict[str, str]) -> None:
+    """Do not let inherited settings reroute a CLI-managed SDK credential."""
+    for key in ("LOGFIRE_BASE_URL", "LOGFIRE_TOKEN", "CODEX_LOGFIRE_CONTENT_CAPTURE_MODE"):
+        if not configured.get(key):
+            raise ValueError(f"CLI-managed exporter config requires {key}")
+    for key in ("LOGFIRE_BASE_URL", "LOGFIRE_TOKEN"):
+        if key in os.environ and os.environ[key] != configured[key]:
+            raise ValueError(f"inherited {key} conflicts with CLI-managed exporter config")
+    for key in (
+        "LOGFIRE_URL", "CODEX_LOGFIRE_TRACES_ENDPOINT", "CODEX_LOGFIRE_TOKEN",
+        "CODEX_LOGFIRE_AUTH_SCHEME", "CODEX_LOGFIRE_OTLP_HEADERS",
+        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT",
+        "OTEL_EXPORTER_OTLP_HEADERS",
+    ):
+        if os.environ.get(key) or configured.get(key):
+            raise ValueError(f"{key} is not supported for CLI-managed exporter config")
 
 
 def config_env_path() -> Path:
