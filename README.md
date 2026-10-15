@@ -29,6 +29,11 @@ claude plugin install pydantic-ai-harness@pydantic-skills
 claude plugin install pydantic@pydantic-skills
 ```
 
+For Logfire, run `/logfire:connect` inside Claude Code to authenticate MCP and
+optionally configure native Claude telemetry. `/logfire:status` checks the two
+connections separately; `/logfire:disconnect` stops session capture without
+removing MCP or skills. See the [connection and capture requirements](plugins/logfire/#connect-once).
+
 ## Install In Codex
 
 Add the published Pydantic marketplace to Codex:
