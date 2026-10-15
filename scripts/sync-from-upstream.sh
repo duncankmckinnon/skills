@@ -147,11 +147,18 @@ sync_skill \
     "migrating-vercel-ai-sdk-and-eve-to-pydantic-ai"
 
 sync_skill \
-    "pydantic/pydantic-ai-harness" \
-    "pydantic_ai_harness/.agents/skills/pydantic-ai-harness" \
+    "pydantic/pydantic-ai" \
+    "src/pydantic_ai_harness/pydantic_ai_harness/.agents/skills/pydantic-ai-harness" \
     "plugins/pydantic-ai-harness/skills/pydantic-ai-harness" \
     "skills/pydantic-ai-harness" \
     "pydantic-ai-harness"
+
+sync_skill \
+    "pydantic/pydantic-ai" \
+    "src/pydantic_ai_harness/pydantic_ai_harness/.agents/skills/migrating-deep-agents-to-pydantic-ai-harness" \
+    "plugins/pydantic-ai-harness/skills/migrating-deep-agents-to-pydantic-ai-harness" \
+    "skills/migrating-deep-agents-to-pydantic-ai-harness" \
+    "migrating-deep-agents-to-pydantic-ai-harness"
 
 sync_skill \
     "pydantic/pydantic" \

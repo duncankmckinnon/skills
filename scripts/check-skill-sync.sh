@@ -97,6 +97,10 @@ check_dir_sync \
     skills/pydantic-ai-harness
 
 check_dir_sync \
+    plugins/pydantic-ai-harness/skills/migrating-deep-agents-to-pydantic-ai-harness \
+    skills/migrating-deep-agents-to-pydantic-ai-harness
+
+check_dir_sync \
     plugins/pydantic/skills/pydantic \
     skills/pydantic
 
