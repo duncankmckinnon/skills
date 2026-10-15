@@ -1,6 +1,6 @@
 {
   "name": "pydantic-ai-harness",
-  "description": "Extend Pydantic AI agents with batteries-included capabilities from pydantic-ai-harness, currently Code Mode for collapsing many tool calls into one sandboxed Python execution",
+  "description": "Extend Pydantic AI agents with batteries-included capabilities from pydantic-ai-harness — coding agents and sandboxed workspaces, Code Mode, sub-agents and planning, memory, context management, and guardrails — and port LangChain Deep Agents applications over to the harness",
   "version": "0.1.0",
   "author": {
     "name": "Pydantic",

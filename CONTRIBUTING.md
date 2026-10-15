@@ -22,7 +22,8 @@ Synced skills are owned by the library they document. Libraries host those skill
 | `migrating-openai-agents-sdk-to-pydantic-ai` | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — `pydantic_ai_slim/pydantic_ai/.agents/skills/migrating-openai-agents-sdk-to-pydantic-ai/` |
 | `migrating-pi-to-pydantic-ai` | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — `pydantic_ai_slim/pydantic_ai/.agents/skills/migrating-pi-to-pydantic-ai/` |
 | `migrating-vercel-ai-sdk-and-eve-to-pydantic-ai` | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — `pydantic_ai_slim/pydantic_ai/.agents/skills/migrating-vercel-ai-sdk-and-eve-to-pydantic-ai/` |
-| `pydantic-ai-harness` | [`pydantic/pydantic-ai-harness`](https://github.com/pydantic/pydantic-ai-harness) — `pydantic_ai_harness/.agents/skills/pydantic-ai-harness/` |
+| `pydantic-ai-harness` | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — `src/pydantic_ai_harness/pydantic_ai_harness/.agents/skills/pydantic-ai-harness/` |
+| `migrating-deep-agents-to-pydantic-ai-harness` | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — `src/pydantic_ai_harness/pydantic_ai_harness/.agents/skills/migrating-deep-agents-to-pydantic-ai-harness/` |
 | `pydantic` | [`pydantic/pydantic`](https://github.com/pydantic/pydantic) — `.agents/skills/pydantic/` |
 
 A daily workflow (`.github/workflows/sync-from-upstream.yml`) clones each upstream listed above, runs `rsync -a --delete` into both destinations, and opens a PR. CI (`scripts/check-skill-sync.sh`) enforces that plugin and standalone skill copies stay byte-identical.
