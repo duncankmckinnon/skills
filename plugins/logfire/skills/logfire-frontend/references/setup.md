@@ -86,8 +86,8 @@ Client Component; Next.js rejects it directly in a Server Component.
 
 Keep instrumentation for the application's page lifetime. Do not return the
 async SDK shutdown handle from a React effect: Strict Mode cleanup would stop
-the shared provider. Tests/previews that replace the setup must await SDK
-cleanup and reset initialization guards before a new
+the shared provider. Tests/previews that replace the setup must remove any
+caller-owned error listeners, await SDK cleanup, and reset initialization guards before a new
 configuration. Prefer a page reload when development HMR re-executes the setup.
 
 See [Next.js client instrumentation](https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation-client)
