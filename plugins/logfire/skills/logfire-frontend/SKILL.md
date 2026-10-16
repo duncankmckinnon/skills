@@ -5,10 +5,6 @@ description: Set up and troubleshoot Pydantic Logfire frontend observability and
 
 # Set Up Frontend Observability and Session Replays
 
-This skill is distributed in the native CLI and the Logfire plugin. Preserve a
-supplied CLI handoff; otherwise follow [native CLI connection](../logfire-coding-agents/references/connection.md)
-only when CLI account/project access is needed. Existing native MCP access can
-verify data without installing or authenticating another client.
 The application uses `@pydantic/logfire-browser` and, when replay is requested,
 `@pydantic/logfire-session-replay`. Configure one browser provider; preserve an
 existing OpenTelemetry provider, proxy, and application initialization pattern.
@@ -20,11 +16,10 @@ router, and existing instrumentation. For Next.js, distinguish client code from
 server instrumentation before changing either. Respect dependency constraints;
 check the installed SDK's types before using a capture or sampling option.
 
-Reuse the exact origin, organization, and project from a prepared wizard handoff.
-Do not rerun account setup or read its local credential. Standalone account or
-query access follows the [connection guide](../logfire-coding-agents/references/connection.md).
-Use its account-only workflow for a browser-only task: a missing local SDK
-credential does not require `init` or a new ordinary project write token.
+Preserve the exact origin, organization, and project supplied by the user or
+setup handoff. Browser-only setup does not require a CLI login, a local SDK
+credential, or an ordinary project write token. Use existing native MCP access
+for verification when available; otherwise use the Logfire UI.
 
 Create or select the frontend application under **Frontend → Applications** and
 use its generated regional URL and restricted frontend token. A normal project

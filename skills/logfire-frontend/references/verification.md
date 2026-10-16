@@ -31,21 +31,25 @@ Strict Mode do not create duplicate providers or duplicate error reports.
 
 ## Confirm fresh telemetry in Logfire
 
-Use existing read-capable native MCP access, or CLI access for the exact
-target/org/project. Do not require another login when native MCP already works.
-A restricted frontend token and an ordinary SDK write token cannot query project data. A
-prepared wizard handoff already confirms its target; do not rerun account setup
-to obtain another credential. For standalone account reads, use the
-[connection guide](../../logfire-coding-agents/references/connection.md).
+Use existing read-capable native MCP or the Logfire UI for the exact project.
+Do not require a CLI login or SDK write token for browser setup. If CLI account
+access is specifically needed, use the
+[CLI connection guide](../../logfire-coding-agents/references/connection.md).
+Restricted frontend tokens and ordinary SDK write tokens cannot query data.
 
-For native MCP, use its query tool with the SQL and explicit time bounds below.
-For the CLI, substitute the confirmed application service name, organization, project, region,
-and verification time window in this bounded query:
+Use a bounded query for the exercised frontend application and time window:
 
-```bash
-logfire --region us --org acme --no-input --output json mcp query run "SELECT start_timestamp, trace_id, service_name, message, attributes->>'session.id' AS session_id FROM records WHERE service_name = 'customer-portal' AND start_timestamp > now() - interval '15 minutes' ORDER BY start_timestamp DESC LIMIT 20" --project my-app
+```sql
+SELECT start_timestamp, trace_id, service_name, message,
+       attributes->>'session.id' AS session_id
+FROM records
+WHERE service_name = 'customer-portal'
+  AND start_timestamp > now() - interval '15 minutes'
+ORDER BY start_timestamp DESC
+LIMIT 20
 ```
 
+Replace the synthetic service name and time window with confirmed values.
 Require fresh rows for the exercised errors with the frontend application's
 identity and a non-empty `session.id`. Inspect the error/exception details and
 any associated request spans. Full RUM also needs fresh page-load/request data
@@ -73,15 +77,10 @@ transport acceptance, not successful playback or masking.
 
 If a playback-capable browser or read access is unavailable, report the browser
 and transport checks performed and explicitly leave ingestion/playback
-unverified. Return a clean project link through the supplied CLI:
-
-```bash
-logfire --region us --org acme --no-input --output json mcp link project --project my-app
-```
-
-Parse `data.url`; use a returned recording link when available. Do not invent a
-private replay URL/API or inject CLI credentials into a browser. Link creation
-is a separate convenience, never an ingestion check.
+unverified. Return the clean project or recording link verified in the UI or
+returned by the available MCP tool. Do not invent a private replay URL/API or
+inject credentials into a browser. Link creation is a separate convenience,
+never an ingestion check.
 
 ## Troubleshooting
 

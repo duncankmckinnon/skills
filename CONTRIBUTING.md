@@ -14,8 +14,8 @@ Synced skills are owned by the library they document. Libraries host those skill
 | `logfire-infrastructure` | [`pydantic/logfire`](https://github.com/pydantic/logfire) — `logfire-sdk/logfire/.agents/skills/logfire-infrastructure/` |
 | `logfire-evals` | [`pydantic/logfire`](https://github.com/pydantic/logfire) — `logfire-sdk/logfire/.agents/skills/logfire-evals/` |
 | `logfire-coding-agents` | [`pydantic/logfire-cli`](https://github.com/pydantic/logfire-cli) — `skills/logfire-coding-agents/` |
-| `logfire-frontend` | [`pydantic/logfire-cli`](https://github.com/pydantic/logfire-cli) — `skills/logfire-frontend/` |
-| `logfire-gateway` | [`pydantic/logfire-cli`](https://github.com/pydantic/logfire-cli) — `skills/logfire-gateway/` |
+| `logfire-frontend` | [`pydantic/logfire-js`](https://github.com/pydantic/logfire-js) — `packages/logfire-browser/.agents/skills/logfire-frontend/` |
+| `logfire-gateway` | [`pydantic/logfire`](https://github.com/pydantic/logfire) — `logfire-sdk/logfire/.agents/skills/logfire-gateway/` |
 | `logfire-query` | This repository — `plugins/logfire/skills/logfire-query/` (native MCP workflow) |
 | `logfire-ui` | This repository — `plugins/logfire/skills/logfire-ui/` (native MCP/browser workflow) |
 | `building-pydantic-ai-agents` | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — `pydantic_ai_slim/pydantic_ai/.agents/skills/building-pydantic-ai-agents/` |
@@ -49,11 +49,11 @@ sync sources: do not import them over the SDK owner's files or the native MCP
 entrypoints. Migrate shared improvements upstream deliberately; the CLI's
 prepared-project and embedded-reference behavior must survive that migration.
 
-For the frontend ownership migration, merge the CLI's plugin-compatible
-specialists first, then import them here and verify publication. Only then merge
-the SDK change that delegates browser setup to the frontend specialist. Let the
-ordinary upstream sync bring those SDK routing changes back here. This avoids
-publishing links to unavailable skills or hand-editing an upstream-owned mirror.
+For this ownership migration, merge the frontend owner in logfire-js and the
+CLI connection references and the SDK's separate Gateway owner first. Publish
+the specialists here and verify their public URLs before merging the SDK's
+browser delegation. The ownership-map change must not merge before its
+upstream directories exist on their default branches.
 `plugins/logfire/skills/logfire-codex-connection` is plugin-owned onboarding,
 not a mirrored library specialist. Its runtime and native-host instructions are
 maintained here and are not part of the standalone skill catalog or upstream sync.

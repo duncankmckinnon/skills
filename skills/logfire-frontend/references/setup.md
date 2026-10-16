@@ -41,7 +41,6 @@ export const frontend = logfire.configureFrontend({
     blockSelector: '[data-logfire-block]',
   }),
 })
-
 ```
 
 Omit `sessionReplay` and its import for RUM-only setup. The replay sampling rates
@@ -105,11 +104,11 @@ Every single-page application should set `rum.session.getRouteName`. Without it,
 
 Use `@pydantic/logfire-browser` 0.28.0 or later for the router helpers. Use the helper for the app's router and add it to the existing `configureFrontend()` call:
 
-| Router | Import | `getRouteName` value |
-| --- | --- | --- |
-| React Router 7 or 8 with `createBrowserRouter` or `<BrowserRouter>` (6 expected to work, not tested) | `reactRouterRouteName` from `@pydantic/logfire-browser/react-router` | `reactRouterRouteName({ routes, matchRoutes, basename })` |
-| TanStack Router (tested with React; Solid and Vue share its core, not tested) | `tanStackRouterRouteName` from `@pydantic/logfire-browser/tanstack-router` | `tanStackRouterRouteName(router)` |
-| Vue Router 4 or 5 | `vueRouterRouteName` from `@pydantic/logfire-browser/vue-router` | `vueRouterRouteName(router)` |
+| Router                                                                                               | Import                                                                     | `getRouteName` value                                      |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | --------------------------------------------------------- |
+| React Router 7 or 8 with `createBrowserRouter` or `<BrowserRouter>` (6 expected to work, not tested) | `reactRouterRouteName` from `@pydantic/logfire-browser/react-router`       | `reactRouterRouteName({ routes, matchRoutes, basename })` |
+| TanStack Router (tested with React; Solid and Vue share its core, not tested)                        | `tanStackRouterRouteName` from `@pydantic/logfire-browser/tanstack-router` | `tanStackRouterRouteName(router)`                         |
+| Vue Router 4 or 5                                                                                    | `vueRouterRouteName` from `@pydantic/logfire-browser/vue-router`           | `vueRouterRouteName(router)`                              |
 
 ```ts
 import { reactRouterRouteName } from '@pydantic/logfire-browser/react-router'

@@ -20,6 +20,29 @@ SPEC.loader.exec_module(SOURCES)
 
 
 class SkillOwnershipTests(unittest.TestCase):
+    def test_product_guides_are_owned_by_their_sdk_not_the_cli(self):
+        sources = SOURCES.parse_sources(SOURCES.MANIFEST.read_text())
+        self.assertEqual(
+            sources["logfire-frontend"],
+            {
+                "repository": "pydantic/logfire-js",
+                "path": "packages/logfire-browser/.agents/skills/logfire-frontend",
+            },
+        )
+        self.assertEqual(
+            sources["logfire-gateway"],
+            {
+                "repository": "pydantic/logfire",
+                "path": "logfire-sdk/logfire/.agents/skills/logfire-gateway",
+            },
+        )
+        cli_owned = {
+            name
+            for name, owner in sources.items()
+            if owner["repository"] == "pydantic/logfire-cli"
+        }
+        self.assertEqual(cli_owned, {"logfire-coding-agents"})
+
     def test_every_published_skill_has_exactly_one_owner(self):
         sources = SOURCES.parse_sources(SOURCES.MANIFEST.read_text())
         published = {path.parent.name for path in CATALOG.glob("*/SKILL.md")}
@@ -36,7 +59,12 @@ class SkillOwnershipTests(unittest.TestCase):
                 destinations.add(destination)
                 self.assertIn(
                     source["repository"],
-                    {"pydantic/logfire", "pydantic/logfire-cli", "pydantic/skills"},
+                    {
+                        "pydantic/logfire",
+                        "pydantic/logfire-js",
+                        "pydantic/logfire-cli",
+                        "pydantic/skills",
+                    },
                 )
                 self.assertEqual(Path(source["path"]).name, name)
                 if source["repository"] == "pydantic/skills":
@@ -85,8 +113,8 @@ class SkillOwnershipTests(unittest.TestCase):
     def test_valid_owners_keep_local_mcp_and_external_cli_sources_distinct(self):
         owners = {
             "logfire-frontend": {
-                "repository": "pydantic/logfire-cli",
-                "path": "skills/logfire-frontend",
+                "repository": "pydantic/logfire-js",
+                "path": "packages/logfire-browser/.agents/skills/logfire-frontend",
             },
             "logfire-query": {
                 "repository": "pydantic/skills",

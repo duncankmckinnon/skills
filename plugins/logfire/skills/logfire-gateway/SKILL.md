@@ -9,24 +9,19 @@ For observing or routing Claude Code/Codex itself, use
 [coding-agent setup](../logfire-coding-agents/SKILL.md) instead. Keep this
 application workflow separate from coding-session recording and provider setup.
 
-Use the Rust `logfire-cli` supplied by the handoff. Invoke the exact executable
-or package launcher named there for every CLI operation. Examples below use
-`logfire-cli`; keep the handoff's region, organization, and project flags.
-
-Without a prepared handoff, follow [native CLI connection](../logfire-coding-agents/references/connection.md)
-and prepare the confirmed project's SDK credential file before creating a new
-Gateway key. An application's existing Gateway key can be used
-without a new CLI login or an ordinary SDK write token.
+Preserve the user's confirmed project, region, provider, and existing credential
+mechanism. An existing application Gateway key needs no CLI login or SDK write
+token. To create a key through the CLI, follow the
+[CLI Gateway credential procedure](../logfire-coding-agents/references/application-gateway.md).
+Use the UI's Gateway Connect flow when CLI access is unavailable.
 
 Use this skill for model traffic, provider routing, and Gateway credentials. It
 is separate from `logfire-instrumentation`: a Logfire write token sends
 telemetry, while a Gateway key authorizes model requests. Do not substitute one
 for the other. Do not configure coding-agent providers, telemetry, or MCP integrations.
 
-The parent CLI may already have prepared the exact Logfire organization,
-project, region, and local SDK credential. Preserve that context. Do not rerun
-`auth`, `signup`, `init`, `mcp context`, or `project current` after a prepared
-handoff unless the application rejects the prepared credential.
+A prepared setup handoff may already identify the exact project and credentials.
+Reuse it rather than repeating authentication or selecting another project.
 
 ## 1. Identify the application
 
@@ -50,18 +45,12 @@ abstraction, dependency versions, and environment conventions.
 
 ## 2. Handle credentials without exposing them
 
-For an application, use an existing Gateway credential when the user has
-provided one through the repository's secret mechanism. Otherwise create a
-separate project key through the prepared CLI login:
-
-```bash
-logfire-cli api-key gateway --name app-gateway
-```
-
-This command prints a one-time secret. Execute it through a process API that
-captures stdout in memory and accepts it only after exit zero. Never run it
-bare in a recorded terminal. Store it through the repository's existing secret
-mechanism as `PYDANTIC_AI_GATEWAY_API_KEY`. Keep unrelated values intact. For a
+Reuse an existing Gateway credential provided through the repository's secret
+mechanism. Otherwise obtain a project-scoped Gateway key using the UI's Connect
+flow or the [CLI credential procedure](../logfire-coding-agents/references/application-gateway.md).
+Do not create a telemetry write token merely to configure an existing Gateway key.
+Never print the one-time secret in a recorded terminal or agent messages.
+Store it through the repository's existing secret mechanism as `PYDANTIC_AI_GATEWAY_API_KEY`. Keep unrelated values intact. For a
 local environment file, require a gitignored regular file with user-only
 permissions, replace exactly one existing assignment or insert one, and commit
 the update atomically. Do not append duplicate assignments. If the existing

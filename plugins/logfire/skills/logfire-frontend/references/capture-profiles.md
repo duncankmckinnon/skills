@@ -2,7 +2,7 @@
 
 Apply one profile to the existing browser configuration from
 [setup](./setup.md). These are alternatives, not successive calls to
-`configureFrontend()`. Keep its generated `frontendOptions`, error listeners,
+`configureFrontend()`. Keep its generated `frontendOptions`, error capture,
 identity, and privacy controls. Verify options against the installed SDK; do not
 silently upgrade beyond the application's dependency constraints.
 
@@ -35,8 +35,7 @@ const frontend = logfire.configureFrontend({
   rum: { webVitals: false, longAnimationFrames: false },
   minLevel: 'error',
   sampling: {
-    tail: ({ level, span }) =>
-      level.gte('error') || span.status.code === SpanStatusCode.ERROR ? 1 : 0,
+    tail: ({ level, span }) => (level.gte('error') || span.status.code === SpanStatusCode.ERROR ? 1 : 0),
   },
   sessionReplay: sessionReplayIntegration({
     maskAllText: true,
@@ -93,7 +92,7 @@ const frontend = logfire.configureFrontend({
 })
 ```
 
-Keep the error listeners and framework boundary reporting from
+Keep the SDK's default global error capture and framework boundary reporting from
 [setup](./setup.md). Remove unwanted explicitly registered instrumentations and
 manual unlevelled spans if strict signal limits are required. Normal Frontend
 page-load, performance, and request charts will have little or no data from this

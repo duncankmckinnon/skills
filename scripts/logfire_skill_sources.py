@@ -7,7 +7,12 @@ from pathlib import Path, PurePosixPath
 
 MANIFEST = Path(__file__).with_name("logfire-skill-sources.json")
 LOCAL_REPOSITORY = "pydantic/skills"
-REPOSITORIES = {"pydantic/logfire", "pydantic/logfire-cli", LOCAL_REPOSITORY}
+REPOSITORIES = {
+    "pydantic/logfire",
+    "pydantic/logfire-js",
+    "pydantic/logfire-cli",
+    LOCAL_REPOSITORY,
+}
 
 
 def unique_fields(pairs):
