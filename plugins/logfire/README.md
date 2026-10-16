@@ -4,6 +4,9 @@ Add [Logfire](https://logfire.pydantic.dev/) observability to Python application
 
 ## Features
 
+- `/logfire:connect` - connect Claude's MCP client and optionally set up native session telemetry
+- `/logfire:status` - check MCP access, native telemetry configuration, and delivery evidence separately
+- `/logfire:disconnect` - stop native Claude telemetry while keeping MCP and skills
 - `/instrument` - detect frameworks and add Logfire instrumentation
 - `logfire-setup` skill - authenticate, inspect the repository, and route to the right setup workflow
 - `logfire-infrastructure` skill - monitor hosts, containers, Kubernetes, databases, and cloud infrastructure
@@ -35,6 +38,35 @@ claude plugin install logfire@pydantic-skills
 ```
 
 The Claude plugin provides `/instrument`, `/debug`, `/query`, and the Logfire MCP server.
+
+### Connect once
+
+Run `/logfire:connect` inside Claude Code. It guides you through MCP OAuth and,
+if you choose, native Claude session telemetry. MCP-only use needs no Logfire
+CLI. For telemetry, the command locates its managed CLI or offers to install
+one into a private, persistent uv tool environment; you do not need to run CLI
+setup commands yourself. Python 3 and uv are needed for that managed install.
+
+Native traces/tool-output capture requires `logfire-cli>=0.1.14,<0.2` (the
+release containing logfire-cli#288). The managed installation uses the
+package's `logfire-cli` executable, not the Python SDK's `logfire` command.
+Older versions are rejected; MCP and existing skills remain usable independently.
+
+The flow asks for the destination project and capture policy. Full capture can
+include prompts, code, tool output, and secrets inside raw model API bodies.
+Metadata-only excludes message/tool content. Native telemetry is user-wide,
+including Claude sessions in other repositories, and requires a restart.
+
+`/logfire:status` distinguishes local configuration from observed ingestion.
+`/logfire:disconnect` removes the native configuration using the CLI; restart
+Claude afterwards. **Disabling or uninstalling the plugin alone does not stop
+native telemetry.** Disconnect before uninstalling. SDK write credentials and
+the managed CLI remain outside the plugin cache, under
+`~/.logfire/claude-plugin`, so plugin updates/uninstall cannot delete the active
+header helper. Project credentials are separated by `CLAUDE_CONFIG_DIR` so
+independent Claude installations cannot retarget each other's helpers.
+Removal does not revoke the remote write token or clear MCP
+OAuth; those are separate actions. This flow installs no transcript exporter.
 
 ## Install In Codex
 
@@ -92,6 +124,10 @@ the shell where you launch Claude Code:
 export LOGFIRE_MCP_URL=https://logfire-eu.pydantic.dev/mcp
 ```
 
+A value saved in Claude's user settings can override this shell value. Check
+the URL reported by `claude mcp get plugin:logfire:logfire`, or use
+`/logfire:connect` to reconcile the endpoint before authenticating.
+
 This needs plugin version 0.1.4 or later; on earlier versions the URL is hardcoded. Run
 `claude plugin list` to see the installed version and the marketplace it came from, then update
 and restart Claude Code:
@@ -122,4 +158,6 @@ Start a new Codex conversation after switching so the MCP tools reload.
 In Claude Code, `.mcp.json` configures the `logfire` MCP server. In Codex, `.codex-plugin/mcp.json`
 configures it. In Cursor, `mcp.json` configures the same hosted server.
 
-The Logfire MCP server requires normal Logfire authentication, such as `logfire auth` or a suitable `LOGFIRE_TOKEN`.
+Claude's hosted MCP connection uses Claude's native OAuth flow (`/mcp`). CLI
+login and project write credentials are separate; `logfire auth` does not log
+Claude's MCP client in. Never paste account credentials into the conversation.
