@@ -18,7 +18,7 @@ the actual region and frontend application selected by the user. The following
 browser-only module enables full RUM and replay; adjust its one configuration
 using [capture profiles](./capture-profiles.md) before running it.
 
-`configureFrontend()` requires browser SDK 0.21.0 or later. If Frontend →
+This example requires browser SDK 0.28.0 or later. If Frontend →
 Applications is unavailable, explain the missing prerequisite and link to
 [Logfire support](https://pydantic.dev/docs/logfire/get-started/help/); do not
 substitute an ordinary server write token.
@@ -42,20 +42,6 @@ export const frontend = logfire.configureFrontend({
   }),
 })
 
-window.addEventListener('error', (event) => {
-  if (!(event instanceof ErrorEvent)) return // resource-load events are separate
-  logfire.reportError(
-    'uncaught browser error',
-    event.error instanceof Error ? event.error : new Error('Uncaught browser error'),
-  )
-})
-
-window.addEventListener('unhandledrejection', (event) => {
-  logfire.reportError(
-    'unhandled browser rejection',
-    event.reason instanceof Error ? event.reason : new Error('Unhandled browser rejection'),
-  )
-})
 ```
 
 Omit `sessionReplay` and its import for RUM-only setup. The replay sampling rates
@@ -64,13 +50,12 @@ the user. Do not imply that every session will be recorded merely because replay
 is enabled. Add `data-logfire-block` to regions that should not appear in replay;
 do not replace an existing block selector and lose its protected regions.
 
-The SDK does not automatically report uncaught JavaScript errors as Logfire
-events. Install these listeners once, or preserve equivalent existing error
-reporting. Framework error boundaries and caught exceptions need explicit
-`logfire.reportError()` calls. Avoid reporting the same failure from several
-handlers. The example keeps real `Error` stacks but does not serialize arbitrary
-promise rejection objects. Review error messages and added attributes for
-sensitive values separately from replay masking.
+The current SDK captures uncaught JavaScript errors and unhandled promise
+rejections by default. Do not add duplicate global listeners. Framework error
+boundaries and caught exceptions need explicit `logfire.reportError()` calls.
+Preserve existing error reporting without reporting the same failure twice.
+Review error messages and added attributes for sensitive values separately
+from replay masking.
 
 `configureFrontend()` enables automatic instrumentation and Web Vitals metrics
 by default. Replay is opt-in, implies browser session identity, and shares
@@ -101,8 +86,8 @@ Client Component; Next.js rejects it directly in a Server Component.
 
 Keep instrumentation for the application's page lifetime. Do not return the
 async SDK shutdown handle from a React effect: Strict Mode cleanup would stop
-the shared provider. Tests/previews that replace the setup must remove their own
-error listeners, await SDK cleanup, and reset initialization guards before a new
+the shared provider. Tests/previews that replace the setup must await SDK
+cleanup and reset initialization guards before a new
 configuration. Prefer a page reload when development HMR re-executes the setup.
 
 See [Next.js client instrumentation](https://nextjs.org/docs/app/api-reference/file-conventions/instrumentation-client)

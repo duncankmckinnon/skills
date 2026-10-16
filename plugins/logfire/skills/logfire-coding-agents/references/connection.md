@@ -48,7 +48,14 @@ changing the parent environment. Preserve explicitly requested headless access.
 
 For session recording or creating a Gateway key, inspect `project current` with the chosen `--data-dir`
 and reuse a verified matching SDK credential. Only if missing, create one with
-`init use --name my-app --permission send --data-dir /absolute/project-data`.
+the following command, replacing the region, organization, project name, and
+data directory with the confirmed destination:
+
+```bash
+logfire-cli --region us --org acme --no-input --output json init use --name my-app --permission send --data-dir /absolute/project-data
+```
+
+For self-hosted instances, replace `--region us` with the confirmed `--base-url`.
 That creates a write token: do not repeat it after a network/authentication error
 or create another token on each reconnect. Keep helper credentials outside the
 plugin cache and separate from an unrelated application's `.logfire` directory.
