@@ -41,7 +41,7 @@ class RuntimeTests(unittest.TestCase):
                 "runtime_fixture.py": 'import json\ndef main():\n print(json.dumps({"version":1,"data":{"installed":"0.1.14"}}))\n',
                 "logfire_cli-0.1.14.dist-info/METADATA": "Metadata-Version: 2.1\nName: logfire-cli\nVersion: 0.1.14\n",
                 "logfire_cli-0.1.14.dist-info/WHEEL": "Wheel-Version: 1.0\nGenerator: fixture\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
-                "logfire_cli-0.1.14.dist-info/entry_points.txt": "[console_scripts]\nlogfire = runtime_fixture:main\n",
+                "logfire_cli-0.1.14.dist-info/entry_points.txt": "[console_scripts]\nlogfire-cli = runtime_fixture:main\n",
             }
             files["logfire_cli-0.1.14.dist-info/RECORD"] = "".join(
                 f"{name},,\n" for name in files
@@ -151,7 +151,9 @@ class RuntimeTests(unittest.TestCase):
             result["executable"],
             str(
                 (
-                    root / "bin" / ("logfire.exe" if os.name == "nt" else "logfire")
+                    root
+                    / "bin"
+                    / ("logfire-cli.exe" if os.name == "nt" else "logfire-cli")
                 ).resolve()
             ),
         )

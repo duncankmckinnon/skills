@@ -48,9 +48,9 @@ one into a private, persistent uv tool environment; you do not need to run CLI
 setup commands yourself. Python 3 and uv are needed for that managed install.
 
 Native traces/tool-output capture requires `logfire-cli>=0.1.14,<0.2` (the
-release containing logfire-cli#288). Until that version is published, the
-telemetry setup flow is blocked; it must not fall back to 0.1.13 and claim
-capture is working. MCP and existing skills remain usable independently.
+release containing logfire-cli#288). The managed installation uses the
+package's `logfire-cli` executable, not the Python SDK's `logfire` command.
+Older versions are rejected; MCP and existing skills remain usable independently.
 
 The flow asks for the destination project and capture policy. Full capture can
 include prompts, code, tool output, and secrets inside raw model API bodies.

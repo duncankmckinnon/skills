@@ -50,7 +50,7 @@ def prepare(root, install=False):
     # one configuration must not invalidate another installation's bound helper.
     identity = hashlib.sha256(os.fsencode(config)).hexdigest()
     data_dir = str(root / "projects" / identity)
-    command = "logfire.exe" if os.name == "nt" else "logfire"
+    command = "logfire-cli.exe" if os.name == "nt" else "logfire-cli"
     managed = root / "bin" / command
     if compatible(managed):
         return {
