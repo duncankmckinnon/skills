@@ -18,7 +18,8 @@ organization, and data directory with the confirmed values:
 logfire-cli --region us --org acme --no-input api-key gateway --name app-gateway --data-dir /absolute/project-data
 ```
 
-For self-hosted instances, replace the region flag with the confirmed base URL.
+For self-hosted instances, replace `--region us` with `--base-url` and the
+confirmed base URL as its argument.
 Preserve the same target and organization on every operation.
 
 This command prints a one-time secret. Execute it through a process API that
