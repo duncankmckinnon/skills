@@ -14,7 +14,8 @@ or package launcher named there for every CLI operation. Examples below use
 `logfire-cli`; keep the handoff's region, organization, and project flags.
 
 Without a prepared handoff, follow [native CLI connection](../logfire-coding-agents/references/connection.md)
-for account-only access. An application's existing Gateway key can be used
+and prepare the confirmed project's SDK credential file before creating a new
+Gateway key. An application's existing Gateway key can be used
 without a new CLI login or an ordinary SDK write token.
 
 Use this skill for model traffic, provider routing, and Gateway credentials. It

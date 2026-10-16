@@ -46,15 +46,17 @@ For browser OAuth, omit ambient `LOGFIRE_API_KEY`, `LOGFIRE_TOKEN`, and
 `LOGFIRE_MCP_TOKEN` from CLI child processes without printing their values or
 changing the parent environment. Preserve explicitly requested headless access.
 
-For session recording, inspect `project current` with the chosen `--data-dir`
+For session recording or creating a Gateway key, inspect `project current` with the chosen `--data-dir`
 and reuse a verified matching SDK credential. Only if missing, create one with
 `init use --name my-app --permission send --data-dir /absolute/project-data`.
 That creates a write token: do not repeat it after a network/authentication error
 or create another token on each reconnect. Keep helper credentials outside the
 plugin cache and separate from an unrelated application's `.logfire` directory.
 
-Frontend setup and Gateway credential creation do not require an ordinary SDK
-write token. Use account-only access for those workflows.
+Frontend setup does not require an ordinary SDK write token. Gateway key
+creation currently resolves the project from its SDK credential file, so
+account-only access is insufficient for that CLI workflow. An existing
+application Gateway key does not require this initialization.
 
 ## MCP remains independent
 
