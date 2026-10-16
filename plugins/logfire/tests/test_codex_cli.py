@@ -20,9 +20,12 @@ class CodexCliTests(LocalApiFixture):
         self.native.write_text(self.unrelated)
 
     def telemetry(self, *arguments, base=None):
-        return self.run_cli(
-            "agent", "codex", "--data-dir", str(self.data), *arguments, base=base
+        # Only configure consumes the SDK bootstrap credential. Exercise status
+        # and removal exactly as the plugin instructs, without --data-dir.
+        data_arguments = (
+            ("--data-dir", str(self.data)) if arguments[0] == "configure" else ()
         )
+        return self.run_cli("agent", "codex", *data_arguments, *arguments, base=base)
 
     def test_capture_modes_reconnect_status_and_removal(self):
         credential = self.credential.read_bytes()

@@ -10,6 +10,9 @@ US server from a separately configured regional connection.
 Run the bundled runtime helper with `--agent codex`, without `--install`, then
 use its returned executable for `--beta --no-input --output json agent codex status`.
 The status command needs no CLI account login or SDK project initialization.
+Codex status/removal use `CODEX_HOME` and the exporter configuration selected by
+`CODEX_LOGFIRE_CONFIG_FILE` or `XDG_CONFIG_HOME`; `--data-dir` is only the SDK
+bootstrap credential directory used by configure, not an installation selector.
 If the runtime is missing, report recording as unknown, not disabled: another
 workflow may have configured it. Do not open secret-bearing configuration files.
 
