@@ -79,6 +79,12 @@ Run these through that executable, with either `--region us`, `--region eu`,
 or a user-confirmed `--base-url`, matching the intended Logfire instance.
 Replace placeholders with the confirmed values and quote them as shell arguments:
 
+Apply the selected target and `--org <organization>` to every account command,
+including `auth status` and `auth login`. CLI browser login is stored in the OS
+credential store for that origin and organization. `<data_dir>` stores the
+separate SDK write credential; it is not an OAuth login directory, and the
+`auth` commands do not accept `--data-dir`.
+
 1. `--output json auth status` to inspect non-secret login metadata.
 2. If needed, `auth login` to complete browser authentication. Do not launch a
    competing interactive login when a browser flow is already pending.
