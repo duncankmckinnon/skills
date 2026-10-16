@@ -35,11 +35,13 @@ jobs:
         run: npx --yes @anthropic-ai/claude-code@2.1.236 plugin validate .
       - name: Test Codex Logfire exporter hooks
         run: python3 -m unittest discover -s plugins/logfire-exporter/tests -v
-      - name: Test Claude connection runtime
+      - name: Test shared runtime and Claude connection
         run: |
           python3 -m pip install uv==0.13.0
-          python3 plugins/logfire/scripts/claude_runtime.py --data-root "${RUNNER_TEMP}/logfire-connection-runtime" --install
-          LOGFIRE_CLAUDE_TEST_CLI="${RUNNER_TEMP}/logfire-connection-runtime/bin/logfire-cli" npx --yes --package @anthropic-ai/claude-code@2.1.236 -c 'python3 -m unittest discover -s plugins/logfire/tests -v'
+          python3 plugins/logfire/scripts/agent_runtime.py --data-root "${RUNNER_TEMP}/logfire-connection-runtime" --install
+          LOGFIRE_CONNECTION_TEST_CLI="${RUNNER_TEMP}/logfire-connection-runtime/bin/logfire-cli" npx --yes --package @anthropic-ai/claude-code@2.1.236 -c 'python3 -m unittest discover -s plugins/logfire/tests -v'
+      - name: Test installed Codex plugin and native CLI capture lifecycle
+        run: LOGFIRE_CONNECTION_TEST_CLI="${RUNNER_TEMP}/logfire-connection-runtime/bin/logfire-cli" npx --yes --package @openai/codex@0.159.3 -c 'python3 -m unittest discover -s plugins/logfire/tests -p "test_codex*.py" -v'
 
   publish-agent-skills:
     name: Publish Agent Skills

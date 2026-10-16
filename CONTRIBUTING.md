@@ -54,6 +54,9 @@ specialists first, then import them here and verify publication. Only then merge
 the SDK change that delegates browser setup to the frontend specialist. Let the
 ordinary upstream sync bring those SDK routing changes back here. This avoids
 publishing links to unavailable skills or hand-editing an upstream-owned mirror.
+`plugins/logfire/skills/logfire-codex-connection` is plugin-owned onboarding,
+not a mirrored library specialist. Its runtime and native-host instructions are
+maintained here and are not part of the standalone skill catalog or upstream sync.
 
 ## Adding a new skill
 

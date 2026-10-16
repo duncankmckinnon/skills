@@ -9,6 +9,9 @@ from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[2]
 CATALOG = ROOT / "plugins/logfire/skills"
+# Native-host onboarding uses plugin scripts and is intentionally not published
+# as a standalone library specialist.
+PLUGIN_ONLY_SKILLS = {"logfire-codex-connection"}
 SPEC = importlib.util.spec_from_file_location(
     "skill_sources", ROOT / "scripts/logfire_skill_sources.py"
 )
@@ -20,8 +23,11 @@ class SkillOwnershipTests(unittest.TestCase):
     def test_every_published_skill_has_exactly_one_owner(self):
         sources = SOURCES.parse_sources(SOURCES.MANIFEST.read_text())
         published = {path.parent.name for path in CATALOG.glob("*/SKILL.md")}
-        self.assertEqual(set(sources), published)
-        self.assertEqual(len(published), 9)
+        self.assertTrue(PLUGIN_ONLY_SKILLS <= published)
+        self.assertEqual(set(sources), published - PLUGIN_ONLY_SKILLS)
+        self.assertEqual(len(sources), 9)
+        for name in PLUGIN_ONLY_SKILLS:
+            self.assertFalse((ROOT / "skills" / name).exists())
         destinations = set()
         for name, source in sources.items():
             with self.subTest(name=name):

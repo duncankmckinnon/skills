@@ -12,7 +12,7 @@ import zipfile
 from pathlib import Path
 from unittest.mock import patch
 
-SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "claude_runtime.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "agent_runtime.py"
 SPEC = importlib.util.spec_from_file_location("claude_runtime", SCRIPT)
 runtime = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(runtime)
@@ -178,6 +178,47 @@ class RuntimeTests(unittest.TestCase):
                 "invalid_config_dir",
             )
         probe.assert_not_called()
+
+    def test_codex_homes_have_separate_bindings_and_ignore_claude_config(self):
+        with patch.object(runtime, "compatible", return_value=True):
+            with patch.dict(os.environ, {"CODEX_HOME": "/first/codex"}):
+                first = runtime.prepare(Path("/private/codex-runtime"), agent="codex")
+            with patch.dict(os.environ, {"CODEX_HOME": "/second/codex"}):
+                second = runtime.prepare(Path("/private/codex-runtime"), agent="codex")
+            with patch.dict(
+                os.environ,
+                {
+                    "CODEX_HOME": "/first/codex",
+                    "CLAUDE_CONFIG_DIR": "/unrelated/claude",
+                },
+            ):
+                again = runtime.prepare(Path("/private/codex-runtime"), agent="codex")
+        self.assertNotEqual(first["data_dir"], second["data_dir"])
+        self.assertEqual(first, again)
+
+    def test_relative_codex_home_fails_before_install_or_probe(self):
+        with (
+            patch.dict(os.environ, {"CODEX_HOME": "relative"}),
+            patch.object(runtime, "compatible") as probe,
+        ):
+            report = runtime.prepare(Path("/private/runtime"), True, agent="codex")
+        self.assertEqual(report["status"], "invalid_config_dir")
+        self.assertIn("CODEX_HOME", report["message"])
+        probe.assert_not_called()
+
+    def test_codex_entrypoint_is_read_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "--agent", "codex"],
+                env={"PATH": "", "HOME": str(root), "CODEX_HOME": str(root / "codex")},
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 1)
+            self.assertEqual(json.loads(result.stdout)["status"], "runtime_required")
+            self.assertEqual(list(root.iterdir()), [])
 
     def test_does_not_bind_native_helper_to_an_ambient_cli_or_uvx_cache(self):
         with (

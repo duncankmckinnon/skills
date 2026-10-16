@@ -60,7 +60,7 @@ turn native capture on or off. Never infer consent from MCP authentication.
 After consent, locate the plugin's persistent runtime:
 
 ```bash
-python3 "${CLAUDE_PLUGIN_ROOT}/scripts/claude_runtime.py"
+python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_runtime.py"
 ```
 
 If it reports `runtime_required`, explain that the plugin needs a persistent
