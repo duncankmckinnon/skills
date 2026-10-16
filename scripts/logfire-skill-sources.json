@@ -1,0 +1,11 @@
+{
+  "logfire-setup": {"repository": "pydantic/logfire", "path": "logfire-sdk/logfire/.agents/skills/logfire-setup"},
+  "logfire-instrumentation": {"repository": "pydantic/logfire", "path": "logfire-sdk/logfire/.agents/skills/logfire-instrumentation"},
+  "logfire-infrastructure": {"repository": "pydantic/logfire", "path": "logfire-sdk/logfire/.agents/skills/logfire-infrastructure"},
+  "logfire-evals": {"repository": "pydantic/logfire", "path": "logfire-sdk/logfire/.agents/skills/logfire-evals"},
+  "logfire-coding-agents": {"repository": "pydantic/logfire-cli", "path": "skills/logfire-coding-agents"},
+  "logfire-frontend": {"repository": "pydantic/logfire-js", "path": "packages/logfire-browser/.agents/skills/logfire-frontend"},
+  "logfire-gateway": {"repository": "pydantic/logfire", "path": "logfire-sdk/logfire/.agents/skills/logfire-gateway"},
+  "logfire-query": {"repository": "pydantic/skills", "path": "plugins/logfire/skills/logfire-query"},
+  "logfire-ui": {"repository": "pydantic/skills", "path": "plugins/logfire/skills/logfire-ui"}
+}

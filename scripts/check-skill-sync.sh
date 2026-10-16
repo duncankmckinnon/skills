@@ -32,29 +32,10 @@ check_dir_sync() {
     fi
 }
 
-check_dir_sync \
-    plugins/logfire/skills/logfire-setup \
-    skills/logfire-setup
-
-check_dir_sync \
-    plugins/logfire/skills/logfire-instrumentation \
-    skills/logfire-instrumentation
-
-check_dir_sync \
-    plugins/logfire/skills/logfire-infrastructure \
-    skills/logfire-infrastructure
-
-check_dir_sync \
-    plugins/logfire/skills/logfire-evals \
-    skills/logfire-evals
-
-check_dir_sync \
-    plugins/logfire/skills/logfire-query \
-    skills/logfire-query
-
-check_dir_sync \
-    plugins/logfire/skills/logfire-ui \
-    skills/logfire-ui
+logfire_skills="$(python3 scripts/logfire_skill_sources.py --names)"
+while IFS= read -r skill; do
+    check_dir_sync "plugins/logfire/skills/$skill" "skills/$skill"
+done <<< "$logfire_skills"
 
 check_dir_sync \
     plugins/ai/skills/building-pydantic-ai-agents \

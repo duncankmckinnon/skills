@@ -7,6 +7,9 @@ Add [Logfire](https://logfire.pydantic.dev/) observability to Python application
 - `/logfire:connect` - connect Claude's MCP client and optionally set up native session telemetry
 - `/logfire:status` - check MCP access, native telemetry configuration, and delivery evidence separately
 - `/logfire:disconnect` - stop native Claude telemetry while keeping MCP and skills
+- `logfire-coding-agents` skill - configure Claude/Codex recording or coding-agent Gateway routing
+- `logfire-frontend` skill - set up browser errors, Web Vitals, and session replays
+- `logfire-gateway` skill - route application model calls through Pydantic AI Gateway
 - `/instrument` - detect frameworks and add Logfire instrumentation
 - `logfire-setup` skill - authenticate, inspect the repository, and route to the right setup workflow
 - `logfire-infrastructure` skill - monitor hosts, containers, Kubernetes, databases, and cloud infrastructure
