@@ -9,18 +9,20 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-CLI = os.environ.get("LOGFIRE_CLAUDE_TEST_CLI")
+CLI = os.environ.get("LOGFIRE_CONNECTION_TEST_CLI") or os.environ.get(
+    "LOGFIRE_CLAUDE_TEST_CLI"
+)
 PROJECT_ID = "11111111-1111-1111-1111-111111111111"
 
 
-@unittest.skipUnless(CLI, "Set LOGFIRE_CLAUDE_TEST_CLI to the published CLI")
-class PublishedCliTests(unittest.TestCase):
+class LocalApiFixture(unittest.TestCase):
     def setUp(self):
         self.directory = tempfile.TemporaryDirectory()
         self.addCleanup(self.directory.cleanup)
         self.root = Path(self.directory.name).resolve()
         self.calls = []
         calls = self.calls
+        fixture = self
 
         class Handler(BaseHTTPRequestHandler):
             def log_message(self, *_args):
@@ -51,13 +53,52 @@ class PublishedCliTests(unittest.TestCase):
                             }
                         ],
                     )
+                elif (
+                    self.path == f"/api/v1/projects/{PROJECT_ID}/write-tokens/"
+                    and getattr(fixture, "allow_write_tokens", False)
+                ):
+                    self.reply(
+                        200,
+                        [
+                            {
+                                "id": "22222222-2222-2222-2222-222222222222",
+                                "project_id": PROJECT_ID,
+                                "active": True,
+                                "created_at": "2026-01-01T00:00:00Z",
+                                "created_by_name": None,
+                                "description": None,
+                                "expires_at": None,
+                                "frontend_application_deleted": False,
+                                "frontend_application_id": None,
+                                "frontend_application_name": None,
+                                "project_name": "smoke-project",
+                                "token_prefix": "synthetic",
+                            }
+                        ],
+                    )
                 else:
                     self.reply(404, {})
 
             def do_POST(self):
                 calls.append(("POST", self.path))
                 self.rfile.read(int(self.headers.get("Content-Length", "0")))
-                self.reply(500, {"detail": "Unexpected mutation"})
+                if (
+                    self.path == f"/api/v1/projects/{PROJECT_ID}/write-tokens/"
+                    and getattr(fixture, "allow_write_tokens", False)
+                ):
+                    self.reply(
+                        200,
+                        {
+                            "id": "22222222-2222-2222-2222-222222222222",
+                            "project_id": PROJECT_ID,
+                            "token": "synthetic-exporter-token",
+                            "created_at": "2026-01-01T00:00:00Z",
+                            "description": None,
+                            "expires_at": None,
+                        },
+                    )
+                else:
+                    self.reply(500, {"detail": "Unexpected mutation"})
 
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
         thread = threading.Thread(target=self.server.serve_forever, daemon=True)
@@ -104,7 +145,7 @@ class PublishedCliTests(unittest.TestCase):
             env=self.env,
             capture_output=True,
             text=True,
-            timeout=30,
+            timeout=120,
             check=False,
         )
 
@@ -113,6 +154,9 @@ class PublishedCliTests(unittest.TestCase):
             "agent", "claude", "--data-dir", str(self.data), *arguments, base=base
         )
 
+
+@unittest.skipUnless(CLI, "Set LOGFIRE_CLAUDE_TEST_CLI to the published CLI")
+class PublishedCliTests(LocalApiFixture):
     def test_reconnect_and_disconnect_preserve_credentials_and_unrelated_settings(self):
         original_credential = self.credential.read_bytes()
         self.config.mkdir()

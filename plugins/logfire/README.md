@@ -70,6 +70,16 @@ OAuth; those are separate actions. This flow installs no transcript exporter.
 
 ## Install In Codex
 
+After installing, run plugin setup or ask "Connect Codex to Logfire."
+The `logfire-codex-connection` skill guides MCP access and optional recording,
+and handles status or disconnect requests. Query-only needs no Logfire CLI.
+Recording offers full, messages-without-tools, or metadata-only capture and
+uses the supported native CLI to configure native telemetry plus pinned
+conversation enrichment. Python 3 and uv are needed for the managed CLI install.
+Restart Codex after changing recording; uninstalling the main plugin does not
+stop native recording. Ask "Stop recording my Codex sessions" to remove it while
+keeping MCP and skills. Setup leaves model-provider and Gateway settings alone.
+
 Add the published Pydantic marketplace to Codex:
 
 ```bash
