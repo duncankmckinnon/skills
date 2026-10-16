@@ -11,7 +11,7 @@ Check the two connections separately. This command is for Claude Code.
    without changing the server or opening a new login flow.
    MCP configuration commands may exit zero even when connection failed; inspect
    their reported status, not just the process exit code.
-2. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/claude_runtime.py"` without
+2. Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_runtime.py"` without
    `--install`. This must not install dependencies during a status check.
 3. If ready, use its returned executable to run
    `--beta --no-input --output json agent claude --data-dir <data_dir> status`.

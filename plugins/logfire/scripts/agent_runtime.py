@@ -1,4 +1,4 @@
-"""Locate or explicitly install a persistent CLI for Claude's native telemetry helper."""
+"""Locate or explicitly install a persistent CLI for native agent telemetry."""
 
 import argparse
 import hashlib
@@ -38,15 +38,16 @@ def compatible(executable):
         return False
 
 
-def prepare(root, install=False):
-    """Do not install, authenticate, or modify Claude settings during a status check."""
-    config = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+def prepare(root, install=False, *, agent="claude"):
+    """Do not install, authenticate, or modify agent settings during a status check."""
+    variable = {"claude": "CLAUDE_CONFIG_DIR", "codex": "CODEX_HOME"}[agent]
+    config = Path(os.environ.get(variable) or Path.home() / f".{agent}")
     if not config.is_absolute():
         return {
             "status": "invalid_config_dir",
-            "message": "CLAUDE_CONFIG_DIR must be absolute.",
+            "message": f"{variable} must be absolute.",
         }
-    # Separate SDK destinations for independent Claude installations. Retargeting
+    # Separate SDK destinations for independent agent installations. Retargeting
     # one configuration must not invalidate another installation's bound helper.
     identity = hashlib.sha256(os.fsencode(config)).hexdigest()
     data_dir = str(root / "projects" / identity)
@@ -67,7 +68,7 @@ def prepare(root, install=False):
             "message": "Install uv, then retry connection setup.",
         }
     # uv tool environments survive cache cleanup; uvx environments do not. Keep this
-    # outside the plugin cache/data, which Claude can delete during updates/uninstall.
+    # outside the plugin cache/data, which the host can delete during updates/uninstall.
     environment = {
         **os.environ,
         "UV_TOOL_DIR": str(root / "tools"),
@@ -106,13 +107,14 @@ def main():
         action="store_true",
         help="Allow installing a compatible CLI after user consent",
     )
-    parser.add_argument(
-        "--data-root", type=Path, default=Path.home() / ".logfire" / "claude-plugin"
-    )
+    parser.add_argument("--agent", choices=("claude", "codex"), default="claude")
+    parser.add_argument("--data-root", type=Path)
     args = parser.parse_args()
+    if args.data_root is None:
+        args.data_root = Path.home() / ".logfire" / f"{args.agent}-plugin"
     if not args.data_root.is_absolute():
         parser.error("--data-root must be absolute")
-    report = prepare(args.data_root, args.install)
+    report = prepare(args.data_root, args.install, agent=args.agent)
     print(json.dumps(report))
     return 0 if report["status"] == "ready" else 1
 

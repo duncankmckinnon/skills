@@ -30,6 +30,10 @@ A daily workflow (`.github/workflows/sync-from-upstream.yml`) clones each upstre
 
 **Anything you add directly inside a synced skill directory will be wiped on the next sync.** To change synced skill content, send a PR upstream. Everything else in this repo (plugin metadata, repo-root files, `.github/`, `scripts/`) is fine to edit here.
 
+`plugins/logfire/skills/logfire-codex-connection` is plugin-owned onboarding,
+not a mirrored library specialist. Its runtime and native-host instructions are
+maintained here and are not part of the standalone skill catalog or upstream sync.
+
 ## Adding a new skill
 
 1. Ensure the skill exists in the library at `<package-dir>/.agents/skills/<skill-name>/`.

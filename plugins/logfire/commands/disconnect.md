@@ -12,7 +12,7 @@ capture, disconnect MCP, or both. If MCP-only, use Claude's native controls and
 skip the telemetry runtime entirely. Do not make users stop capture just to
 disconnect MCP, or clear their MCP login when they only asked to stop capture.
 
-Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/claude_runtime.py"` without
+Run `python3 "${CLAUDE_PLUGIN_ROOT}/scripts/agent_runtime.py"` without
 `--install`. Using its returned executable and data directory:
 
 1. Preview `--beta --no-input --output json agent claude --data-dir <data_dir> remove --dry-run`.
