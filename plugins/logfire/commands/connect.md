@@ -75,8 +75,9 @@ Use the returned absolute `executable` as the CLI and `data_dir` for the
 telemetry project's credentials. Keep this directory separate from the app's
 `.logfire`; do not print or open its token file. Quote each path as one argument.
 
-Run these through that executable, with explicit `--region us|eu` or a
-user-confirmed `--base-url`, matching the MCP instance:
+Run these through that executable, with either `--region us`, `--region eu`,
+or a user-confirmed `--base-url`, matching the intended Logfire instance.
+Replace placeholders with the confirmed values and quote them as shell arguments:
 
 1. `--output json auth status` to inspect non-secret login metadata.
 2. If needed, `auth login` to complete browser authentication. Do not launch a
@@ -89,7 +90,9 @@ user-confirmed `--base-url`, matching the MCP instance:
    This creates a write token. Do not mint another token on every reconnect,
    treat network/authentication failure as missing credentials, or pick another
    project on failure.
-4. `--org <organization> --beta --no-input --output json agent claude --data-dir <data_dir> configure --capture full|metadata-only`.
+4. Run exactly one command matching the capture choice:
+   - Full capture: `--org <organization> --beta --no-input --output json agent claude --data-dir <data_dir> configure --capture full`.
+   - Metadata only: `--org <organization> --beta --no-input --output json agent claude --data-dir <data_dir> configure --capture metadata-only`.
 
 Use the supported CLI for writes, not a hand-written exporter/settings merge.
 Respect an existing independent telemetry exporter: report conflicts rather
