@@ -2,20 +2,10 @@
 
 ## Query Logfire
 
-Inspect the actual registered Logfire MCP connection and its endpoint using
-Codex's native plugin/MCP controls. Never print a full Codex configuration file:
-it may contain exporter credentials. The bundled endpoint defaults to
-`https://logfire-us.pydantic.dev/mcp`; EU uses
-`https://logfire-eu.pydantic.dev/mcp`. Confirm the intended region or self-hosted
-origin rather than inferring it from the default.
-
-Use native MCP OAuth for the exact registered server, then a small authenticated
-read to verify access. CLI account login does not authenticate Codex's MCP client.
-If the plugin server is not addressable by `codex mcp login`, use the app's native
-connection controls; do not invent a server name or add a duplicate MCP server.
-For a wrong endpoint, explain the mismatch and use supported native controls to
-switch it with user confirmation. Do not edit installed plugin cache files or
-claim `LOGFIRE_MCP_URL` overrides this Codex manifest's fixed URL.
+Follow [MCP connection selection](mcp.md) for US, EU, or self-hosted access.
+It keeps one selected connection active without changing plugin cache files.
+Never print a full Codex configuration file: it may contain exporter credentials.
+CLI account login does not authenticate Codex's MCP client.
 
 Query-only ends here. No runtime installation or capture questions are needed.
 

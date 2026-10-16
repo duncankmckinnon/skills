@@ -151,16 +151,18 @@ If you installed from Anthropic's `claude-plugins-official` marketplace instead,
 name. That marketplace pins a specific commit of this repository, so a release can take longer to
 appear there than on `pydantic-skills`, which tracks `main`.
 
-**Codex** users can switch by replacing the MCP entry and re-authenticating:
+**Codex** users can ask "Connect Logfire to my EU account" or provide their
+self-hosted MCP URL. The plugin's setup skill disables only the bundled US MCP
+server, keeps the plugin and skills enabled, and configures one native regional
+connection. Existing matching connections are reused; replacing another connection
+requires confirmation. The URL of a bundled server cannot be overridden through
+Codex's plugin policy or `LOGFIRE_MCP_URL`.
 
-```bash
-codex mcp remove logfire
-codex mcp add logfire --url https://logfire-eu.pydantic.dev/mcp
-codex mcp login logfire
-codex mcp get logfire
-```
-
-Start a new Codex conversation after switching so the MCP tools reload.
+See the [regional MCP workflow](skills/logfire-codex-connection/references/mcp.md)
+for the native commands and scoped policy helper. Restart/reload Codex after
+switching, authenticate the selected connection, and verify access. Returning to
+US removes only the agreed regional connection before re-enabling the bundled
+server. MCP changes do not change session recording or Gateway routing.
 
 **Cursor** installs are a local copy, so edit the `url` in
 `~/.cursor/plugins/local/logfire/mcp.json` and reload the window.

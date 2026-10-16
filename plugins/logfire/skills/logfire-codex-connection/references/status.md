@@ -4,6 +4,8 @@
 
 Check MCP access separately through native Codex controls and, if available, a
 small authenticated read. Do not launch login or change endpoints on failure.
+Use the [MCP reference](mcp.md#status-and-disconnect) to distinguish the bundled
+US server from a separately configured regional connection.
 
 Run the bundled runtime helper with `--agent codex`, without `--install`, then
 use its returned executable for `--beta --no-input --output json agent codex status`.
@@ -20,6 +22,8 @@ result short; offer connection setup for repairs without doing them automaticall
 
 Clarify whether the user wants to stop recording, disconnect MCP, or both when
 ambiguous. MCP-only uses native connection controls and needs no runtime.
+Follow [MCP disconnect](mcp.md#status-and-disconnect) without re-enabling a
+previously disabled US connection.
 
 For recording, explain that removal stops native export and removes enrichment,
 but keeps skills, MCP, account login, and remote tokens. Once the user confirms
