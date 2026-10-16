@@ -55,33 +55,19 @@ sync_skill() {
         >> "$SUMMARY_FILE"
 }
 
-sync_skill \
-    "pydantic/logfire" \
-    "logfire-sdk/logfire/.agents/skills/logfire-setup" \
-    "plugins/logfire/skills/logfire-setup" \
-    "skills/logfire-setup" \
-    "logfire-setup"
-
-sync_skill \
-    "pydantic/logfire" \
-    "logfire-sdk/logfire/.agents/skills/logfire-instrumentation" \
-    "plugins/logfire/skills/logfire-instrumentation" \
-    "skills/logfire-instrumentation" \
-    "logfire-instrumentation"
-
-sync_skill \
-    "pydantic/logfire" \
-    "logfire-sdk/logfire/.agents/skills/logfire-infrastructure" \
-    "plugins/logfire/skills/logfire-infrastructure" \
-    "skills/logfire-infrastructure" \
-    "logfire-infrastructure"
-
-sync_skill \
-    "pydantic/logfire" \
-    "logfire-sdk/logfire/.agents/skills/logfire-evals" \
-    "plugins/logfire/skills/logfire-evals" \
-    "skills/logfire-evals" \
-    "logfire-evals"
+# Native-MCP entrypoints are owned here, not overwritten from the CLI bundle.
+# Validate before any mirrors are modified; process substitution would hide a
+# failed validator from `set -e`.
+sources="$(python3 scripts/logfire_skill_sources.py --external)"
+while IFS=$'\t' read -r skill repository source_path; do
+    [ -n "$skill" ] || continue
+    sync_skill \
+        "$repository" \
+        "$source_path" \
+        "plugins/logfire/skills/$skill" \
+        "skills/$skill" \
+        "$skill"
+done <<< "$sources"
 
 sync_skill \
     "pydantic/pydantic-ai" \

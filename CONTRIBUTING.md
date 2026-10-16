@@ -13,6 +13,11 @@ Synced skills are owned by the library they document. Libraries host those skill
 | `logfire-instrumentation` | [`pydantic/logfire`](https://github.com/pydantic/logfire) — `logfire-sdk/logfire/.agents/skills/logfire-instrumentation/` |
 | `logfire-infrastructure` | [`pydantic/logfire`](https://github.com/pydantic/logfire) — `logfire-sdk/logfire/.agents/skills/logfire-infrastructure/` |
 | `logfire-evals` | [`pydantic/logfire`](https://github.com/pydantic/logfire) — `logfire-sdk/logfire/.agents/skills/logfire-evals/` |
+| `logfire-coding-agents` | [`pydantic/logfire-cli`](https://github.com/pydantic/logfire-cli) — `skills/logfire-coding-agents/` |
+| `logfire-frontend` | [`pydantic/logfire-cli`](https://github.com/pydantic/logfire-cli) — `skills/logfire-frontend/` |
+| `logfire-gateway` | [`pydantic/logfire-cli`](https://github.com/pydantic/logfire-cli) — `skills/logfire-gateway/` |
+| `logfire-query` | This repository — `plugins/logfire/skills/logfire-query/` (native MCP workflow) |
+| `logfire-ui` | This repository — `plugins/logfire/skills/logfire-ui/` (native MCP/browser workflow) |
 | `building-pydantic-ai-agents` | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — `pydantic_ai_slim/pydantic_ai/.agents/skills/building-pydantic-ai-agents/` |
 | `migrating-agno-to-pydantic-ai` | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — `pydantic_ai_slim/pydantic_ai/.agents/skills/migrating-agno-to-pydantic-ai/` |
 | `migrating-claude-agent-sdk-to-pydantic-ai` | [`pydantic/pydantic-ai`](https://github.com/pydantic/pydantic-ai) — `pydantic_ai_slim/pydantic_ai/.agents/skills/migrating-claude-agent-sdk-to-pydantic-ai/` |
@@ -28,7 +33,27 @@ Synced skills are owned by the library they document. Libraries host those skill
 
 A daily workflow (`.github/workflows/sync-from-upstream.yml`) clones each upstream listed above, runs `rsync -a --delete` into both destinations, and opens a PR. CI (`scripts/check-skill-sync.sh`) enforces that plugin and standalone skill copies stay byte-identical.
 
+`scripts/logfire-skill-sources.json` is the executable ownership map for the
+Logfire catalog. Both upstream sync and mirror validation use it. CI also
+checks that every published Logfire skill has an owner and that relative
+references resolve inside the assembled catalog.
+
 **Anything you add directly inside a synced skill directory will be wiped on the next sync.** To change synced skill content, send a PR upstream. Everything else in this repo (plugin metadata, repo-root files, `.github/`, `scripts/`) is fine to edit here.
+
+The two locally owned Logfire skills are not upstream sync targets. Edit their
+plugin sources here, then mirror them to `skills/`. Do not replace their native
+MCP authentication with the CLI's independently authenticated MCP client.
+
+The CLI also ships release-bound SDK/query/UI adaptations. Those are not public
+sync sources: do not import them over the SDK owner's files or the native MCP
+entrypoints. Migrate shared improvements upstream deliberately; the CLI's
+prepared-project and embedded-reference behavior must survive that migration.
+
+For the frontend ownership migration, merge the CLI's plugin-compatible
+specialists first, then import them here and verify publication. Only then merge
+the SDK change that delegates browser setup to the frontend specialist. Let the
+ordinary upstream sync bring those SDK routing changes back here. This avoids
+publishing links to unavailable skills or hand-editing an upstream-owned mirror.
 
 ## Adding a new skill
 

@@ -18,6 +18,8 @@ jobs:
           persist-credentials: false
       - name: Verify plugin and standalone skill copies are in sync
         run: bash scripts/check-skill-sync.sh
+      - name: Verify Logfire skill ownership and references
+        run: python3 -m unittest discover -s scripts/tests -v
 
   validate-plugins:
     runs-on: ubuntu-latest
