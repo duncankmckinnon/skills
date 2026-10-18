@@ -1,37 +1,57 @@
 # Extracting Dataset Cases From Logfire Traces
 
+Every project instruments differently, so nothing here assumes span names, attribute keys, or
+payload shapes. Learn them from the data with the discovery sequence, then write the
+extraction query.
+
 Shape the SQL so that **one row is one case**. Always select `trace_id` and `span_id`:
 they become `source_trace_id` / `source_span_id` (the case links back to its trace in
 the UI) and give each case a stable name.
 
-Engine rules that matter here (Apache DataFusion, not Postgres):
+## Engine Rules
 
-- `attributes->>'key'` returns text; `attributes->'key'` returns a JSON subtree. Chain
-  for nesting: `attributes->'a'->0->>'b'`. Never `json_extract*`.
-- Dotted attribute names are single keys: `attributes->>'gen_ai.agent.name'`.
-- List an attribute's keys with `json_object_keys(attributes)`; array length with
+Logfire runs Apache DataFusion with Postgres-like syntax. It is not Postgres.
+
+- `attributes->>'key'` returns text; `attributes->'key'` returns a JSON subtree. Chain for
+  nesting: `attributes->'outer'->0->>'inner'`. Never `json_extract*`.
+- Dotted attribute names are single keys: `attributes->>'some.dotted.key'`.
+- List an attribute's keys with `json_object_keys(attributes)`. Get an array's length with
   `json_length(attributes->'key')`.
-- Filter on `span_name`, `service_name`, `otel_scope_name`, `trace_id` and the time
-  window first; they are indexed.
-- The window is at most 14 days per query. For more history, run several windows and
-  merge (dedupe on `span_id`).
+- Filter on `span_name`, `service_name`, `otel_scope_name`, `trace_id` and the time window
+  first; they are indexed.
+- One query spans at most 14 days. For more history, run several windows and merge (dedupe
+  on `span_id`).
 - A JSON subtree selected with `->` may arrive as a JSON-encoded string. Decode it with
   `json.loads` in the script before mapping.
+- Correlated subqueries, `EXISTS` and `IN (SELECT ...)` often fail to plan. Use a CTE plus a
+  `JOIN` instead.
 
 ## Discovery Sequence
 
-Run these before writing the extraction query. Never guess attribute names.
+Run these before writing the extraction query, and read the results. Never guess span names
+or attribute keys.
+
+**1. Inventory what produces spans.** Find the span whose lifetime brackets one unit of the
+behaviour the dataset is about. Root spans (`parent_span_id IS NULL`) are a good first view;
+drop that filter if the unit of work is nested.
 
 ```sql
--- 1. What produces spans? Pick the span that represents one unit of work.
-SELECT span_name, otel_scope_name, service_name, count(*) AS n
+SELECT service_name, otel_scope_name, span_name, count(*) AS n,
+       min(start_timestamp) AS first_seen, max(start_timestamp) AS last_seen
 FROM records
 WHERE kind = 'span'
-GROUP BY span_name, otel_scope_name, service_name
+GROUP BY service_name, otel_scope_name, span_name
 ORDER BY n DESC
-LIMIT 30
+LIMIT 40
+```
 
--- 2. Which attributes does that span carry, and how often are they populated?
+When the inventory doesn't make the target obvious, search the content the user described.
+`message` has a full-text index (`text_contains('keyword', message)`). A text search over
+`attributes::text` works but is slow, so keep the window narrow.
+
+**2. List the chosen span's attributes and how often each is populated.**
+
+```sql
 SELECT json_object_keys(attributes) AS keys
 FROM records
 WHERE span_name = '<chosen span>'
@@ -43,8 +63,11 @@ SELECT count(*) AS n,
 FROM records
 WHERE span_name = '<chosen span>'
 LIMIT 1
+```
 
--- 3. Look at a few truncated values to learn the JSON shape.
+**3. Read truncated samples to learn each value's shape.**
+
+```sql
 SELECT trace_id, span_id, substr(attributes->>'<key>', 1, 400) AS sample
 FROM records
 WHERE span_name = '<chosen span>'
@@ -52,113 +75,52 @@ ORDER BY start_timestamp DESC
 LIMIT 3
 ```
 
-## Pydantic AI Agents (otel scope `pydantic-ai`)
-
-| Span | `span_name` | Useful attributes |
-|------|-------------|-------------------|
-| Agent run (root of a run) | `invoke_agent <agent name>` (older versions: `agent run`) | `pydantic_ai.all_messages` (full conversation, JSON array), `final_result` (text of the final output), `gen_ai.system_instructions`, `gen_ai.agent.name`, `gen_ai.aggregated_usage.input_tokens` / `output_tokens` |
-| Model request | `chat <model>` | `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.request.model`, `gen_ai.tool.definitions` |
-| Tool call | `execute_tool <tool name>` | `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result` |
-
-Each message is `{"role": "user" | "assistant" | ..., "parts": [{"type": "text", "content": "..."}, ...]}`.
-If those attributes are missing, the app may have set `include_content=False` on
-instrumentation; there is no content to extract.
+**4. If the inputs and outputs live on different spans,** relate them through the trace tree:
+`trace_id` groups a trace, and `parent_span_id` points to the parent's `span_id`.
 
 ```sql
--- Agent runs: user prompt -> final output
-SELECT trace_id, span_id,
-       attributes->'pydantic_ai.all_messages'->0->'parts'->0->>'content' AS prompt,
-       attributes->>'final_result' AS final_result,
-       attributes->>'gen_ai.agent.name' AS agent_name
-FROM records
-WHERE otel_scope_name = 'pydantic-ai'
-  AND span_name LIKE 'invoke_agent%'
-  AND attributes->>'final_result' IS NOT NULL
-ORDER BY start_timestamp DESC
-LIMIT 200
+-- the chosen span, plus a value from its parent
+SELECT c.trace_id, c.span_id, p.span_name AS parent, c.attributes->>'<key>' AS value
+FROM records c
+JOIN records p ON p.span_id = c.parent_span_id AND p.trace_id = c.trace_id
+WHERE c.span_name = '<chosen span>'
+LIMIT 20
 ```
 
-`->0` is the first message. For a multi-turn conversation that is the first user turn, not
-the latest one: select the whole `pydantic_ai.all_messages` array and pick the last
-`role = 'user'` message in Python instead.
+The same join also narrows the selection to spans that ran under a particular parent, by
+filtering on `p.span_name`.
 
-```sql
--- Tool calls: arguments -> result, for testing one tool in isolation
-SELECT trace_id, span_id,
-       attributes->>'gen_ai.tool.call.arguments' AS arguments,
-       attributes->>'gen_ai.tool.call.result' AS result
-FROM records
-WHERE otel_scope_name = 'pydantic-ai'
-  AND span_name = 'execute_tool <tool name>'
-ORDER BY start_timestamp DESC
-LIMIT 200
-```
+## Reading What Discovery Shows
 
-### Sub-agent runs
-
-An agent that delegates work produces nested `invoke_agent` spans. To select only the
-delegated runs (for example, reviews a coordinator handed off), join each run to its parent
-span. Use the delegating tool's span name as it appears in the discovery inventory:
-
-```sql
-SELECT r.trace_id, r.span_id,
-       r.attributes->'pydantic_ai.all_messages'->0->'parts'->0->>'content' AS task,
-       r.attributes->>'final_result' AS result
-FROM records r
-JOIN records p ON p.span_id = r.parent_span_id AND p.trace_id = r.trace_id
-WHERE r.otel_scope_name = 'pydantic-ai'
-  AND r.span_name LIKE 'invoke_agent%'
-  AND p.span_name = 'execute_tool delegate_task'
-LIMIT 200
-```
-
-## Coding-Agent Sessions (Claude Code, Codex)
-
-Recorded coding-agent sessions have one `invoke_agent` span per user turn under a `session`
-root, with `service_name` `claude` or `codex`:
-
-| Attribute | Content |
-|-----------|---------|
-| `gen_ai.input.messages` | The user turn (JSON message array) |
-| `gen_ai.output.messages` | The agent's final reply for that turn |
-| `gen_ai.conversation.id` | Session id, for grouping turns |
-| `thirdeye.repo`, `thirdeye.cwd` | Repository name and working directory |
-| `thirdeye.turn.status` | For example `completed` |
-
-Codex turns begin with the repository's whole AGENTS.md, so a keyword filter on the full
-input matches almost every turn. Filter on the end of the input instead, for example
-`right(attributes->>'gen_ai.input.messages', 1500) ILIKE '%review%'`, and confirm by reading
-a few prompt tails.
-
-## Other Instrumented Code
-
-- **`@logfire.instrument` / `logfire.span`**: function arguments are attributes named after
-  the parameters (`attributes->>'question'`). The return value is in `attributes->'return'`
-  only when the decorator used `record_return=True`.
-- **OpenAI / Anthropic instrumentation**: request/response content is on the LLM span.
-  Run the discovery sequence for that span; key names vary by integration version.
-- **HTTP endpoints**: `http_route`, `http_method` and `http_response_status_code` are flat
-  columns. Request bodies exist only if the app recorded them as attributes.
+- **The value isn't on any span.** The application didn't record it, so there is nothing to
+  extract. Tell the user what would need to be recorded instead of approximating it.
+- **Values are structured** (arrays, nested objects). Select the subtree with `->` and pick the
+  part you need in Python. That is easier to get right than deep SQL paths, especially when
+  the position of the element you want varies from row to row.
+- **Values share boilerplate.** When every value starts with the same long preamble, a keyword
+  filter on the whole value matches almost every row. Read a few samples, then filter on the
+  part that varies, for example `right(<expr>, 1500)`.
+- **One input appears several times.** The same input re-run produces several rows. Decide
+  with the user whether each run is a case or whether to dedupe on the input expression.
+- **Wording-based filters are approximate.** Before writing the extraction query, list the
+  candidates with a short excerpt and check that the filter keeps what the user meant and
+  drops what they didn't.
 
 ## Scrubbed Values
 
 Logfire's scrubber replaces values that match sensitive patterns at ingest, leaving text like
-`[Scrubbed due to 'auth']` or `[Scrubbed due to 'secret']`. Prose that only discusses auth or
-secrets is often caught too, such as code reviews of auth code. The original content cannot be
-recovered. During discovery, count how many candidate rows are scrubbed
-(`attributes->>'final_result' LIKE '[Scrubbed%'`), drop them when mapping, and tell the user
-how many were lost. Fixing it for future traces means changing the app's scrubbing options;
-that is the user's call.
+`[Scrubbed due to '<pattern>']`. Ordinary prose that merely mentions a sensitive word can be
+caught too. The original content cannot be recovered. During discovery, count how many
+candidate rows have scrubbed inputs or outputs (`<expr> LIKE '[Scrubbed%'`), drop them when
+mapping, and tell the user how many were lost. Fixing it for future traces means changing
+the application's scrubbing options; that is the user's call.
 
 ## Choosing Rows
 
-| Goal | Filter |
-|------|--------|
-| Regression set ("golden" behaviour) | Successful runs: `NOT is_exception`, `final_result IS NOT NULL`, optionally `otel_status_code` not `'ERROR'` |
-| Failure set | `is_exception` on the run span, or join to child spans that errored on `trace_id` |
-| Coverage across inputs | Sample instead of `ORDER BY start_timestamp DESC`: `ORDER BY random()`, or one row per bucket (`row_number() OVER (PARTITION BY <attr> ORDER BY start_timestamp DESC) = 1` in a CTE) |
-| One environment only | `deployment_environment = 'production'` |
-| Dedupe repeated prompts | `GROUP BY` the prompt expression and take `max(trace_id)`, `max(span_id)`, or dedupe in Python |
-
-Correlated subqueries, `EXISTS` and `IN (SELECT ...)` often fail to plan. Use a CTE plus
-`JOIN` instead.
+| Goal | Approach |
+|------|----------|
+| Successful behaviour | `NOT is_exception`, and the output value present (`IS NOT NULL`) |
+| Failures | `is_exception` on the chosen span, or join to child spans in the same trace that errored |
+| Coverage across inputs | Sample instead of taking the latest rows: `ORDER BY random()`, or one row per group with `row_number() OVER (PARTITION BY <expr> ORDER BY start_timestamp DESC) = 1` in a CTE |
+| One environment | `deployment_environment = '<name>'` |
+| Duplicate inputs | `GROUP BY` the input expression and take `max(trace_id)`, `max(span_id)`, or dedupe in Python |

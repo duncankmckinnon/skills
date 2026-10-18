@@ -102,8 +102,8 @@ The SQL itself should return one row per case and include `trace_id` and `span_i
 |-----|----------|-------|
 | `inputs` | yes | JSON object. Exactly what the task under test receives |
 | `name` | strongly recommended | Stable and unique, for example `f"span-{row['span_id']}"`. It makes re-runs update cases instead of duplicating them |
-| `expected_output` | no | JSON object. The API rejects a bare scalar. Wrap it, for example `{"label": "positive"}` |
-| `metadata` | no | JSON object for slicing results: agent, environment, model, and so on |
+| `expected_output` | no | JSON object. The API rejects a bare scalar. Wrap it, for example `{"value": ...}` |
+| `metadata` | no | JSON object of whatever the user will want to slice results by |
 | `source_trace_id`, `source_span_id` | no | Links the case to its trace in the UI. Only the dict form can set these |
 | `tags` | no | List of strings |
 

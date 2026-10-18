@@ -88,17 +88,17 @@ into the script's environment for that command instead of copying it to another 
 Before querying, settle with the user what the dataset is for, because that decides what goes
 where:
 
-- **`inputs`**: exactly what the task under test will receive (for an agent, usually the user
-  prompt plus any context it depends on).
+- **`inputs`**: exactly what the task under test will receive, including any context it
+  depends on.
 - **`expected_output`**: a reference answer, or omit it. A production output is only a correct
   reference if someone has reviewed it. Unreviewed outputs are better kept in `metadata`
   (for example `metadata.observed_output`) for regression checks.
-- **`metadata`**: anything for slicing results later (agent name, environment, model, customer
-  tier).
+- **`metadata`**: anything the user will want to slice results by later, such as the service or
+  environment a row came from.
 
 Use **JSON objects** for `inputs`, `expected_output`, and `metadata`. The hosted API rejects a
 bare scalar `expected_output` (`dict_type: Input should be a valid dictionary`). Wrap scalars,
-for example `{"label": "positive"}`, and make the eval task compare against that field.
+for example `{"value": ...}`, and make the eval task compare against that field.
 
 Pick a stable dataset name: it starts with a letter or digit and uses only letters, digits,
 `.`, `_` and `-`. Names are unique per project. Reuse the name the eval code will use, because a
@@ -112,15 +112,16 @@ Otherwise run each query through `LogfireQueryClient.query_json_rows()` with the
 
 Follow the discovery sequence in [references/trace-extraction.md](references/trace-extraction.md):
 
-1. Inventory spans to find the one that represents one unit of work (one agent run, one tool
-   call, one request).
+1. Inventory spans to find the one whose lifetime brackets one unit of the behaviour the
+   dataset is about.
 2. List its attribute keys and check how often each is populated.
-3. Sample a few truncated values to learn the JSON shape.
+3. Sample a few truncated values to learn each value's shape.
+4. If inputs and outputs live on different spans, relate them through the trace tree.
 
-Never guess attribute names. For Pydantic AI the agent run span is `invoke_agent <name>` with
-`pydantic_ai.all_messages` and `final_result`. The reference has the full table, plus patterns
-for sub-agent runs, Claude Code and Codex sessions, `@logfire.instrument` functions, tool
-calls, failure sets, and sampling.
+Never assume span names, attribute keys, or payload shapes, even for instrumentation you
+recognise. Versions and configuration change them. Before writing the extraction query, list
+the candidate rows with short excerpts and confirm with the user that the selection matches
+what they meant.
 
 Check how many candidate rows have content replaced by Logfire's scrubber (`[Scrubbed due to
 '...']`). That content is gone. Exclude those rows and report the count to the user.
