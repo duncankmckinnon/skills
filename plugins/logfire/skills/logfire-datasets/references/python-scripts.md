@@ -22,27 +22,36 @@ from logfire.experimental.api_client import (
 
 ## Credentials
 
-Neither client reads environment variables on its own. Read the key from the environment
-and pass it explicitly. Never hard-code it or accept it as a CLI argument, because it would
-end up in shell history.
+Neither client reads environment variables on its own. Resolve each credential in the order
+SKILL.md defines, then pass it explicitly:
 
-| Variable | Use | Scopes |
-|----------|-----|--------|
-| `LOGFIRE_API_KEY` | Logfire's conventional name for an API key. Use it for the project that will hold the dataset | `project:read_datasets`, `project:write_datasets`, plus `project:read` if the traces are in the same project |
-| A second variable, for example `LOGFIRE_SOURCE_API_KEY` | Only when the traces are in a different project | `project:read` |
-| `LOGFIRE_BASE_URL` | Self-hosted Logfire only. Pass it as `base_url=` | n/a |
+1. The process environment.
+2. A `NAME=value` line in the project's gitignored `.env`. Look for `.env` in the current
+   working directory or the project root, not next to the script file, because scripts often
+   live in a subdirectory.
 
-Both clients infer the region (US/EU) from the key. If the key is missing, fail with a
-message that names the variable and the scopes. That message is the most useful thing the
-script can tell a user who has not set it up.
+`python-dotenv`'s `load_dotenv()` does this: it does not override variables that are already
+set. A ten-line parser that splits `KEY=value` lines works if the project avoids the extra
+dependency. Never hard-code a credential or accept it as a CLI argument, because it would end
+up in shell history.
+
+| Variable | Client | What it must be |
+|----------|--------|-----------------|
+| `LOGFIRE_API_KEY` | `LogfireAPIClient(api_key=...)` | An API key from the project that will hold the dataset, with `project:read_datasets` and `project:write_datasets` |
+| `LOGFIRE_READ_TOKEN` | `LogfireQueryClient(read_token=...)` | A read token for the project holding the traces. An API key is rejected here with `401 Invalid read token` |
+| `LOGFIRE_BASE_URL` | Both, as `base_url=` | Self-hosted Logfire only |
+
+Both clients infer the region (US/EU) from the credential. If one is missing, fail with a
+message that names the variable, what kind of credential it is, and where to create it. That
+message is the most useful thing the script can tell a user who has not set it up.
 
 ## Script Stages
 
 Give the script these stages, in this order, with writing only behind an explicit flag:
 
-1. **Check:** prove the credentials before doing work. Run a trivial query to prove
-   `project:read`, and call `list_datasets()` to prove `project:read_datasets`. Both are
-   read-only. `project:write_datasets` can only be proven by the first write.
+1. **Check:** prove the credentials before doing work. Run a trivial query with the read
+   token, and call `list_datasets()` with the API key to prove `project:read_datasets`. Both
+   are read-only. `project:write_datasets` can only be proven by the first write.
 2. **Retrieve:** run the extraction SQL over a bounded time window.
 3. **Map:** turn each row into a case dict, or skip it.
 4. **Validate:** check every case locally, before any network write.
@@ -58,12 +67,17 @@ adapts the dataset later.
 ## Retrieving Rows
 
 ```python
-with LogfireQueryClient(read_token=source_key) as query:
+with LogfireQueryClient(read_token=read_token) as query:
     result = query.query_json_rows(sql=SQL, min_timestamp=start, max_timestamp=end)
 rows = result['rows']        # list of dicts keyed by column name
 ```
 
-- `read_token=` accepts an API key with `project:read`. The parameter name predates API keys.
+- `read_token=` must be a read token. API keys are rejected with `401 Invalid read token`.
+- **No read token?** For a small one-off set, export the rows with MCP `query_run` into a
+  JSON file and give the script a `--rows <file>` option that skips the query. Everything after
+  retrieval stays the same. Writing the file means re-typing the MCP result, so select
+  `md5(<expr>)` next to each long text column in the export query and compare it with
+  `hashlib.md5(text.encode()).hexdigest()` before pushing. Any mismatch means the copy is wrong.
 - `min_timestamp` is effectively required: omitting it is deprecated. Use timezone-aware
   datetimes; naive ones are assumed to be UTC.
 - One query spans at most 14 days. For a longer history, loop over windows of 14 days or less
@@ -134,7 +148,7 @@ with LogfireAPIClient(api_key=dest_key) as client:
   existing names, which suits a strictly append-only dataset.
 - **Batch the upload.** Each `add_cases` request is all-or-nothing. A few hundred cases per
   request keeps payloads reasonable, and because named cases upsert, a failed run can simply
-  be re-run.
+  be re-run. An upsert creates a new case `version` even when the content is unchanged.
 - Neither `add_cases` nor `push_dataset` deletes anything. Removing stale cases means
   `list_cases()` followed by `delete_case()` per id. Confirm with the user first.
 - Catch `DatasetApiError` and report `.status_code` and `.detail`: `401` is the wrong key

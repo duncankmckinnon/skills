@@ -94,6 +94,42 @@ ORDER BY start_timestamp DESC
 LIMIT 200
 ```
 
+### Sub-agent runs
+
+An agent that delegates work produces nested `invoke_agent` spans. To select only the
+delegated runs (for example, reviews a coordinator handed off), join each run to its parent
+span. Use the delegating tool's span name as it appears in the discovery inventory:
+
+```sql
+SELECT r.trace_id, r.span_id,
+       r.attributes->'pydantic_ai.all_messages'->0->'parts'->0->>'content' AS task,
+       r.attributes->>'final_result' AS result
+FROM records r
+JOIN records p ON p.span_id = r.parent_span_id AND p.trace_id = r.trace_id
+WHERE r.otel_scope_name = 'pydantic-ai'
+  AND r.span_name LIKE 'invoke_agent%'
+  AND p.span_name = 'execute_tool delegate_task'
+LIMIT 200
+```
+
+## Coding-Agent Sessions (Claude Code, Codex)
+
+Recorded coding-agent sessions have one `invoke_agent` span per user turn under a `session`
+root, with `service_name` `claude` or `codex`:
+
+| Attribute | Content |
+|-----------|---------|
+| `gen_ai.input.messages` | The user turn (JSON message array) |
+| `gen_ai.output.messages` | The agent's final reply for that turn |
+| `gen_ai.conversation.id` | Session id, for grouping turns |
+| `thirdeye.repo`, `thirdeye.cwd` | Repository name and working directory |
+| `thirdeye.turn.status` | For example `completed` |
+
+Codex turns begin with the repository's whole AGENTS.md, so a keyword filter on the full
+input matches almost every turn. Filter on the end of the input instead, for example
+`right(attributes->>'gen_ai.input.messages', 1500) ILIKE '%review%'`, and confirm by reading
+a few prompt tails.
+
 ## Other Instrumented Code
 
 - **`@logfire.instrument` / `logfire.span`**: function arguments are attributes named after
@@ -103,6 +139,16 @@ LIMIT 200
   Run the discovery sequence for that span; key names vary by integration version.
 - **HTTP endpoints**: `http_route`, `http_method` and `http_response_status_code` are flat
   columns. Request bodies exist only if the app recorded them as attributes.
+
+## Scrubbed Values
+
+Logfire's scrubber replaces values that match sensitive patterns at ingest, leaving text like
+`[Scrubbed due to 'auth']` or `[Scrubbed due to 'secret']`. Prose that only discusses auth or
+secrets is often caught too, such as code reviews of auth code. The original content cannot be
+recovered. During discovery, count how many candidate rows are scrubbed
+(`attributes->>'final_result' LIKE '[Scrubbed%'`), drop them when mapping, and tell the user
+how many were lost. Fixing it for future traces means changing the app's scrubbing options;
+that is the user's call.
 
 ## Choosing Rows
 

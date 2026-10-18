@@ -16,37 +16,72 @@ work goes through `logfire.experimental.api_client` (install `logfire[datasets]`
 authenticated with a Logfire **API key**. Neither the MCP OAuth session nor a
 `LOGFIRE_TOKEN` write token can be used for it.
 
-The workflow is: configure a key, agree on the case shape, discover the source data, write
-a retrieval and upload script for the project, dry-run it, push, verify.
+The workflow is: configure credentials, agree on the case shape, discover the source data,
+write a retrieval and upload script for the project, dry-run it, push, verify.
 
-## Step 1: Configure the API Key
+## Step 1: Configure Credentials
 
-| Operation | Scope on the key |
-|-----------|------------------|
-| Query traces with the SDK (`LogfireQueryClient`) | `project:read` on the project holding the traces |
-| List / fetch datasets and cases | `project:read_datasets` |
-| Create / update datasets, add / update / delete cases | `project:write_datasets` |
+Two different credentials are involved. They are not interchangeable:
 
-The dataset is created in **the project the key belongs to**. A key never spans projects.
-When the traces and the dataset are in one project, one key with all three scopes is
-enough. When they differ, use a second key with `project:read` for the query side.
+| Credential | Variable | Used for | Where it comes from |
+|------------|----------|----------|---------------------|
+| API key | `LOGFIRE_API_KEY` | Datasets API (`LogfireAPIClient`): needs `project:read_datasets` and `project:write_datasets` | **Settings > API Keys** in the project that will hold the dataset |
+| Read token | `LOGFIRE_READ_TOKEN` | Querying telemetry from a script (`LogfireQueryClient`) | **Settings > Read tokens** in the project holding the traces, or `logfire read-tokens --project <org>/<project> create` |
 
-1. Check what is already set without printing secrets:
-   `python3 -c "import os; print({k: bool(os.environ.get(k)) for k in ['LOGFIRE_API_KEY', 'LOGFIRE_SOURCE_API_KEY']})"`.
-   Also check the project's `.env` for an existing `LOGFIRE_API_KEY=` line.
-2. If no key exists, ask the user to create one in the target project under
-   **Settings > API Keys** with the scopes above, then export it as `LOGFIRE_API_KEY` or add it to a
-   gitignored `.env`. Never ask the user to paste the key into chat, never echo it, and never
-   write it into a tracked file.
-3. The region (US/EU) is inferred from the key. Set `LOGFIRE_BASE_URL` only for self-hosted
-   Logfire.
-4. Add `logfire[datasets]` to the project's dependencies (for example
+The query API accepts only read tokens. An API key fails there with `401 Invalid read token`,
+even when it has `project:read`. The dataset is created in **the project the API key belongs
+to**. Neither credential spans projects. The region (US/EU) is inferred from each credential.
+Set `LOGFIRE_BASE_URL` only for self-hosted Logfire.
+
+A read token is not needed when there is no script-side query: for example, the cases already
+exist in code, or the set is small enough to export with MCP `query_run` into a JSON file that
+the script reads instead of querying. That route passes trace content through the agent's
+context, so keep it to a few dozen rows.
+
+The user always creates the credentials (API keys only in the UI). Use this handoff every time:
+
+**Where credentials live.** Dataset scripts resolve each variable in this order, and stop with a
+message naming the variable, the project, and the scopes if neither is found:
+
+1. The process environment (CI, or a shell the agent was launched from).
+2. A `NAME=value` line in a gitignored `.env` file at the project root.
+
+**Procedure:**
+
+1. Check what is already set, without printing values:
+   `python3 -c "import os; print({k: bool(os.environ.get(k)) for k in ['LOGFIRE_API_KEY', 'LOGFIRE_READ_TOKEN']})"`,
+   and `grep -cE '^LOGFIRE_(API_KEY|READ_TOKEN)=.' .env`. If everything needed is present, go
+   to the verification step below.
+2. If not, confirm with the user which project should hold the dataset (the API key decides it)
+   and which project holds the traces.
+3. Prepare the `.env` file: make sure it is ignored (`git check-ignore -q .env`; if it isn't,
+   ask before adding `.env` to `.gitignore`), and add empty `LOGFIRE_API_KEY=` and
+   `LOGFIRE_READ_TOKEN=` lines for whatever is missing.
+4. Hand off to the user with these exact details:
+   - in project `<dataset project>`, **Settings > API Keys**, create a key named
+     `datasets-<dataset name>` with `project:read_datasets` and `project:write_datasets`;
+   - in project `<traces project>`, **Settings > Read tokens**, create a read token;
+   - paste each after its variable in `<absolute path>/.env`.
+
+   Explain that a variable exported in their own terminal now would not reach the agent's
+   commands, which is why the credentials go in the file.
+5. Wait for the user to confirm, then re-run the presence check.
+
+Never ask for a credential in chat, never print or log it (not even a prefix), and never write
+it into a tracked file. Do not take credentials from other tools' config files unless the user
+points you to them. When a credential is in a different `.env` than the script expects, pass it
+into the script's environment for that command instead of copying it to another file.
+
+**Then:**
+
+1. Add `logfire[datasets]` to the project's dependencies (for example
    `uv add 'logfire[datasets]'`).
-5. Verify the key before writing anything else. Run a trivial query with `LogfireQueryClient`
-   (proves `project:read`) and call `LogfireAPIClient.list_datasets()` (proves
-   `project:read_datasets`). Both are read-only. A `401` means the key is wrong or for another
-   region; a `403` names the missing scope. `project:write_datasets` is only proven by the
-   first push. Build this into the script as a check stage (Step 4) so it can be re-run.
+2. Verify the credentials before writing anything else. Run a trivial query with
+   `LogfireQueryClient` and the read token, and call `LogfireAPIClient.list_datasets()` with the
+   API key (proves `project:read_datasets`). Both are read-only. A `401` means the credential is
+   wrong, the wrong kind, or for another region; a `403` names the missing scope.
+   `project:write_datasets` is only proven by the first push. Build this into the script as a
+   check stage (Step 4) so it can be re-run.
 
 ## Step 2: Agree on the Case Shape
 
@@ -71,8 +106,8 @@ hosted and a code-defined dataset with the same name merge into one entry.
 
 ## Step 3: Discover the Source Data
 
-Do the exploration with the MCP `query_run` tool if it is available (no API key needed).
-Otherwise run each query through `LogfireQueryClient.query_json_rows()` with the API key (see
+Do the exploration with the MCP `query_run` tool if it is available (no credentials needed).
+Otherwise run each query through `LogfireQueryClient.query_json_rows()` with the read token (see
 [references/python-scripts.md](references/python-scripts.md#retrieving-rows)).
 
 Follow the discovery sequence in [references/trace-extraction.md](references/trace-extraction.md):
@@ -84,7 +119,11 @@ Follow the discovery sequence in [references/trace-extraction.md](references/tra
 
 Never guess attribute names. For Pydantic AI the agent run span is `invoke_agent <name>` with
 `pydantic_ai.all_messages` and `final_result`. The reference has the full table, plus patterns
-for `@logfire.instrument` functions, tool calls, failure sets, and sampling.
+for sub-agent runs, Claude Code and Codex sessions, `@logfire.instrument` functions, tool
+calls, failure sets, and sampling.
+
+Check how many candidate rows have content replaced by Logfire's scrubber (`[Scrubbed due to
+'...']`). That content is gone. Exclude those rows and report the count to the user.
 
 Production traces can contain personal or customer data, and a dataset copies it into a
 long-lived store. If inputs look like they hold PII or secrets, tell the user before pushing and
@@ -150,6 +189,7 @@ to re-run it. To run an experiment over the dataset next, use logfire-evals.
 | Mistake | Fix |
 |---------|-----|
 | Trying MCP tools or `LOGFIRE_TOKEN` for dataset calls | Use an API key with the datasets scopes |
+| `401 Invalid read token` from `LogfireQueryClient` | The query API needs a read token, not an API key |
 | Dataset appears in the wrong project | The key decides the project. Use a key from the target project |
 | `dict_type: Input should be a valid dictionary` | Wrap scalar `expected_output` (or inputs/metadata) in an object |
 | Duplicate cases after re-running | Give every case a stable `name` (for example from `span_id`) |
