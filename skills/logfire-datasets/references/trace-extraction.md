@@ -57,7 +57,9 @@ FROM records
 WHERE span_name = '<chosen span>'
 ORDER BY start_timestamp DESC
 LIMIT 3
+```
 
+```sql
 SELECT count(*) AS n,
        count(*) FILTER (WHERE attributes->>'<candidate key>' IS NOT NULL) AS populated
 FROM records
@@ -110,9 +112,11 @@ filtering on `p.span_name`.
 
 Logfire's scrubber replaces values that match sensitive patterns at ingest, leaving text like
 `[Scrubbed due to '<pattern>']`. Ordinary prose that merely mentions a sensitive word can be
-caught too. The original content cannot be recovered. During discovery, count how many
-candidate rows have scrubbed inputs or outputs (`<expr> LIKE '[Scrubbed%'`), drop them when
-mapping, and tell the user how many were lost. Fixing it for future traces means changing
+caught too. The original content cannot be recovered. Scrubbing can replace a whole value or
+a single field nested inside a JSON value, so match the marker anywhere:
+`<expr> LIKE '%[Scrubbed due to%'`. During discovery, count how many candidate rows have
+scrubbed inputs or outputs, drop them when mapping (or keep partly scrubbed rows only if the
+user agrees), and tell the user how many were lost. Fixing it for future traces means changing
 the application's scrubbing options; that is the user's call.
 
 ## Choosing Rows
@@ -123,4 +127,4 @@ the application's scrubbing options; that is the user's call.
 | Failures | `is_exception` on the chosen span, or join to child spans in the same trace that errored |
 | Coverage across inputs | Sample instead of taking the latest rows: `ORDER BY random()`, or one row per group with `row_number() OVER (PARTITION BY <expr> ORDER BY start_timestamp DESC) = 1` in a CTE |
 | One environment | `deployment_environment = '<name>'` |
-| Duplicate inputs | `GROUP BY` the input expression and take `max(trace_id)`, `max(span_id)`, or dedupe in Python |
+| Duplicate inputs | Keep one whole row per input: `row_number() OVER (PARTITION BY <input expr> ORDER BY start_timestamp DESC) = 1` in a CTE. Don't aggregate columns separately (`max(trace_id)`, `max(span_id)`), because that can pair ids and values from different runs |

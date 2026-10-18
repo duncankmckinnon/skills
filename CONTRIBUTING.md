@@ -42,8 +42,11 @@ references resolve inside the assembled catalog.
 **Anything you add directly inside a synced skill directory will be wiped on the next sync.** To change synced skill content, send a PR upstream. Everything else in this repo (plugin metadata, repo-root files, `.github/`, `scripts/`) is fine to edit here.
 
 The three locally owned Logfire skills are not upstream sync targets. Edit their
-plugin sources here, then mirror them to `skills/`. Do not replace their native
-MCP authentication with the CLI's independently authenticated MCP client.
+plugin sources here, then mirror them to `skills/`. `logfire-query` and
+`logfire-ui` use native MCP authentication; do not replace it with the CLI's
+independently authenticated MCP client. `logfire-datasets` uses a Logfire API
+key for the datasets API and a read token for script-side queries, because the
+MCP server has no dataset tools.
 
 The CLI also ships release-bound SDK/query/UI adaptations. Those are not public
 sync sources: do not import them over the SDK owner's files or the native MCP

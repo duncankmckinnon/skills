@@ -31,8 +31,8 @@ SKILL.md defines, then pass it explicitly:
    live in a subdirectory.
 
 `python-dotenv`'s `load_dotenv()` does this: it does not override variables that are already
-set. A ten-line parser that splits `KEY=value` lines works if the project avoids the extra
-dependency. Never hard-code a credential or accept it as a CLI argument, because it would end
+set. A hand-written parser must match what dotenv accepts: an optional `export ` prefix,
+whitespace around `=`, quoted values, and the last line winning when a name repeats. Never hard-code a credential or accept it as a CLI argument, because it would end
 up in shell history.
 
 | Variable | Client | What it must be |
@@ -51,7 +51,8 @@ Give the script these stages, in this order, with writing only behind an explici
 
 1. **Check:** prove the credentials before doing work. Run a trivial query with the read
    token, and call `list_datasets()` with the API key to prove `project:read_datasets`. Both
-   are read-only. `project:write_datasets` can only be proven by the first write.
+   are read-only. Print the `project_id` of the listed datasets so it can be compared with the
+   intended project. `project:write_datasets` can only be proven by the first write.
 2. **Retrieve:** run the extraction SQL over a bounded time window.
 3. **Map:** turn each row into a case dict, or skip it.
 4. **Validate:** check every case locally, before any network write.
@@ -130,19 +131,27 @@ Unnamed cases always count as new, so they duplicate on every re-run. Warn when 
 ```python
 with LogfireAPIClient(api_key=dest_key) as client:
     try:
-        client.get_dataset(NAME, include_cases=False)          # exists: leave its settings alone
+        detail = client.get_dataset(NAME, include_cases=False)   # exists: leave its settings alone
     except DatasetNotFoundError:
-        client.create_dataset(NAME, description=..., input_type=Inputs, output_type=Expected)
+        detail = client.create_dataset(NAME, description=DESCRIPTION)  # schemas: see below
+    if str(detail.get('project_id')) != EXPECTED_PROJECT_ID:
+        sys.exit(f'{NAME} is in project {detail.get("project_id")}, not {EXPECTED_PROJECT_ID}')
     for batch in batches(cases, 200):
         client.add_cases(NAME, batch, on_conflict='update')
     detail = client.get_dataset(NAME, include_cases=False)
 ```
 
 - **Create only if missing.** Do not call `update_dataset()` or `push_dataset()` on an
-  existing dataset unless the user asked to change its settings. `push_dataset()` replaces
-  dataset-level evaluators that teammates may have configured in the UI.
+  existing dataset unless the user asked to change its settings. On an existing dataset,
+  `push_dataset()` replaces dataset-level evaluators, its input/output/metadata schemas
+  (taken from the `Dataset`'s generic types), and its description when one is passed. Any of
+  these may have been set by teammates in the UI.
+- **Check the project before adding cases.** The API key decides the project. Compare
+  `project_id` on the existing or newly created dataset with the intended project's id
+  (`EXPECTED_PROJECT_ID` above, taken from MCP `project_list` or from the user), and stop on a
+  mismatch.
 - `create_dataset(input_type=, output_type=, metadata_type=)` takes pydantic models or
-  dataclasses and stores their JSON schemas. Omit them until the case shape is stable,
+  dataclasses and stores their JSON schemas. Add them only once the case shape is stable,
   because schemas reject later cases that don't match.
 - `add_cases(..., on_conflict='update')` upserts by name (the default). `'error'` fails on
   existing names, which suits a strictly append-only dataset.
@@ -156,15 +165,19 @@ with LogfireAPIClient(api_key=dest_key) as client:
   exists. For schema or payload failures, `.detail` names the failing field.
 
 **When the cases already live in code** (a `pydantic_evals.Dataset` or a case file) and
-there is no trace link to keep, `push_dataset()` is the shorter path. It creates or
-updates the dataset, infers schemas from the dataset's generic types, and upserts named
-cases:
+there is no trace link to keep, `push_dataset()` is the shorter path. It creates or updates
+the dataset, sets schemas from the dataset's generic types, replaces dataset-level
+evaluators, and upserts named cases. Use it for a new dataset, or when the user wants the code
+to own those settings:
 
 ```python
 dataset = Dataset[MyInputs, MyOutput, MyMetadata].from_file('cases.yaml')
 with LogfireAPIClient(api_key=dest_key) as client:
-    client.push_dataset(dataset, description='...')   # replaces dataset-level evaluators
+    client.push_dataset(dataset, description=DESCRIPTION)
 ```
+
+For an existing dataset whose settings the user wants to keep, upload `dataset.cases` with
+`add_cases()` instead.
 
 ## Reading Datasets Back
 

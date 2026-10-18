@@ -1,6 +1,6 @@
 ---
 name: logfire-datasets
-description: Create, populate, or update hosted Logfire datasets (Datasets & Experiments) from production traces, spans, logs, query results, or existing case files. Use when the user asks to "create a dataset in Logfire", "build an eval dataset from traces", "turn production runs into test cases", "add cases to a Logfire dataset", "push a dataset to Logfire", "sync cases from code", or "list/fetch hosted datasets". The Logfire MCP server has no dataset tools; this skill uses an API key and the Python SDK. To run evaluations or experiments against a dataset, use logfire-evals.
+description: Build or extend a hosted dataset stored in Logfire by uploading cases extracted from Logfire traces, spans, logs, or query results, or from existing case files. Use when the user asks to "create a hosted dataset in Logfire", "upload cases to Logfire", "turn Logfire traces into dataset cases", "add cases to a Logfire dataset", "push a dataset to Logfire", or "list/fetch hosted datasets". The Logfire MCP server has no dataset tools; this skill uses an API key and the Python SDK. Not for writing or running evaluations, evaluators, or experiments, or for local pydantic_evals datasets: use logfire-evals for those.
 ---
 
 # Create Logfire Datasets
@@ -26,7 +26,7 @@ Two different credentials are involved. They are not interchangeable:
 | Credential | Variable | Used for | Where it comes from |
 |------------|----------|----------|---------------------|
 | API key | `LOGFIRE_API_KEY` | Datasets API (`LogfireAPIClient`): needs `project:read_datasets` and `project:write_datasets` | **Settings > API Keys** in the project that will hold the dataset |
-| Read token | `LOGFIRE_READ_TOKEN` | Querying telemetry from a script (`LogfireQueryClient`) | **Settings > Read tokens** in the project holding the traces, or `logfire read-tokens --project <org>/<project> create` |
+| Read token | `LOGFIRE_READ_TOKEN` | Querying telemetry from a script (`LogfireQueryClient`) | The Logfire CLI (`read-tokens create`, below), or **Settings > Read tokens** in the project holding the traces |
 
 The query API accepts only read tokens. An API key fails there with `401 Invalid read token`,
 even when it has `project:read`. The dataset is created in **the project the API key belongs
@@ -48,15 +48,25 @@ message naming the variable, the project, and the scopes if neither is found:
 
 **Procedure:**
 
-1. Check what is already set, without printing values:
-   `python3 -c "import os; print({k: bool(os.environ.get(k)) for k in ['LOGFIRE_API_KEY', 'LOGFIRE_READ_TOKEN']})"`,
-   and `grep -cE '^LOGFIRE_(API_KEY|READ_TOKEN)=.' .env`. If everything needed is present, go
-   to the verification step below.
-2. If not, confirm with the user which project should hold the dataset (the API key decides it)
-   and which project holds the traces.
+1. Check where each variable is set, without printing values. Run this from the project root:
+
+   ```bash
+   python3 -c "import os,re,pathlib; p=pathlib.Path('.env'); t=p.read_text() if p.exists() else ''
+   for k in ['LOGFIRE_API_KEY','LOGFIRE_READ_TOKEN']:
+       m=re.findall(rf'^\s*(?:export\s+)?{k}\s*=(.*)$', t, re.M)
+       v=m[-1].strip().strip('\'\"') if m else None
+       print(k, 'environment' if os.environ.get(k) else '.env' if v else 'empty line in .env' if m else 'missing')"
+   ```
+
+   A value from the **environment** wins over `.env` and may be left over from another
+   project. Before using it, ask the user to confirm it is meant for this dataset. If
+   everything needed is present and confirmed, go to the verification step below.
+2. Otherwise, confirm with the user which project should hold the dataset (the API key decides
+   it) and which project holds the traces.
 3. Prepare the `.env` file: make sure it is ignored (`git check-ignore -q .env`; if it isn't,
-   ask before adding `.env` to `.gitignore`), and add empty `LOGFIRE_API_KEY=` and
-   `LOGFIRE_READ_TOKEN=` lines for whatever is missing.
+   ask before adding `.env` to `.gitignore`). Add an empty `NAME=` line only for variables
+   that have no line at all. If a line already exists (empty, quoted, or `export`-prefixed),
+   have the user fill that one, because a second line for the same name overrides the first.
 4. Hand off to the user with these exact details:
    - in project `<dataset project>`, **Settings > API Keys**, create a key named
      `datasets-<dataset name>` with `project:read_datasets` and `project:write_datasets`;
@@ -66,6 +76,24 @@ message naming the variable, the project, and the scopes if neither is found:
    Explain that a variable exported in their own terminal now would not reach the agent's
    commands, which is why the credentials go in the file.
 5. Wait for the user to confirm, then re-run the presence check.
+
+**Read token from the Logfire CLI.** Instead of asking the user to create the read token in the
+UI, the agent can mint it with the Python Logfire CLI. First authenticate and select the target
+with [Authenticate and Select the Exact Project](https://pydantic.dev/.well-known/agent-skills/logfire-instrumentation/references/auth.md):
+derive `<target>` (`--region` or `--base-url`), use its verified CLI prefix, and run its
+`whoami` check. Skip the rest of that reference if `whoami` already reports a signed-in user.
+`read-tokens create` prints the token to stdout, so capture it straight into `.env` and never
+let it reach the terminal or transcript:
+
+```bash
+# <logfire> = auth.md's verified Python CLI prefix, including --non-interactive <target>
+token="$(<logfire> read-tokens --project '<org>/<traces project>' create)" \
+  && printf 'LOGFIRE_READ_TOKEN=%s\n' "$token" >> .env; unset token
+```
+
+Run it only when `.env` has no `LOGFIRE_READ_TOKEN` line. If an empty one exists, remove it
+first, because a second line overrides the first. Do not use `--save`: it stores the token under
+`.logfire/`, where dataset scripts don't look. The API key still has to come from the UI.
 
 Never ask for a credential in chat, never print or log it (not even a prefix), and never write
 it into a tracked file. Do not take credentials from other tools' config files unless the user
@@ -82,6 +110,12 @@ into the script's environment for that command instead of copying it to another 
    wrong, the wrong kind, or for another region; a `403` names the missing scope.
    `project:write_datasets` is only proven by the first push. Build this into the script as a
    check stage (Step 4) so it can be re-run.
+3. Confirm the API key belongs to the intended project. Every dataset returned by
+   `list_datasets()` carries a `project_id`. Compare it with the project's id (MCP
+   `project_list` shows ids) or ask the user. If the project has no datasets yet, the
+   `create_dataset()` response carries `project_id`: the script must check it before adding
+   any cases, and on a mismatch stop and tell the user. The empty dataset it created in the
+   wrong project should then be deleted, with the user's OK.
 
 ## Step 2: Agree on the Case Shape
 
@@ -148,8 +182,9 @@ The script must:
 - give every case a stable `name` (for example from `span_id`) so re-runs upsert instead of
   duplicating;
 - create the dataset only if it is missing, then upload with `add_cases()` using dicts that
-  carry `source_trace_id` / `source_span_id`. `push_dataset()` overwrites dataset-level
-  evaluators and cannot set trace links;
+  carry `source_trace_id` / `source_span_id`. On an existing dataset, `push_dataset()`
+  overwrites evaluators, schemas, and description, and it cannot set trace links;
+- check the dataset's `project_id` against the intended project before adding cases;
 - validate cases locally before any write, and print the hosted `case_count` at the end.
 
 Run the check, then the dry run. Show the user the case count and two or three cases from the
